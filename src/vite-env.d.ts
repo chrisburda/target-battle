@@ -43,6 +43,7 @@ interface ThreeGameDiagnostics {
     materials: number;
     particles: number;
     projectiles: number;
+    occlusionBake: Array<{ animal: string; ms: number; samples: number; min: number; mean: number }>;
   };
   renderer: {
     calls: number;

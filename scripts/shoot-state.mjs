@@ -52,10 +52,20 @@ if (process.argv.includes('--no-hud')) {
 await page.screenshot({ path: out });
 const diagnostics = await page.evaluate(() => window.__THREE_GAME_DIAGNOSTICS__ ?? null);
 console.log('->', out);
-if (diagnostics) {
+// Renderer counters live under `renderer`, not at the top level. Reading them
+// from the root printed "draw calls ?" on every run, which is worse than
+// printing nothing: it looks like a measurement.
+const renderer = diagnostics?.renderer;
+if (renderer) {
   console.log(
-    `   draw calls ${diagnostics.calls ?? '?'}  triangles ${(diagnostics.triangles ?? 0).toLocaleString()}` +
-      `  fps ${Math.round(diagnostics.fps ?? 0)}`,
+    `   draw calls ${renderer.calls}  triangles ${(renderer.triangles ?? 0).toLocaleString()}` +
+      `  programs ${renderer.programs}  tier ${renderer.tier}`,
+  );
+}
+for (const bake of diagnostics?.world?.occlusionBake ?? []) {
+  console.log(
+    `   occlusion ${bake.animal.padEnd(9)} ${String(bake.ms).padStart(4)} ms  ` +
+      `${bake.samples.toLocaleString()} samples  min ${bake.min}  mean ${bake.mean}`,
   );
 }
 console.log(errors.length ? '   errors: ' + errors.join(' | ') : '   clean');

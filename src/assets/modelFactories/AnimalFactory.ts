@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { MaterialLibrary } from '../MaterialLibrary';
+import { oklch, toOklch } from '../palette';
+import { bakeAmbientOcclusion, type OcclusionReport } from './occlusion';
 import type { AnimalDef } from '../../game/types';
 
 /**
@@ -105,7 +107,7 @@ export type FighterModel = {
   height: number;
   /** Standing height in the root's LOCAL units, for anything parented to it. */
   localHeight: number;
-  diagnostics: { meshes: number; triangles: number };
+  diagnostics: { meshes: number; triangles: number; occlusion: OcclusionReport };
 };
 
 // --------------------------------------------------------------- geometry
@@ -284,21 +286,19 @@ function mountOnSkull(
   const radius = craniumRadiusAt(headRadius, t) * seat;
 
   object.position.set(Math.cos(yaw) * radius, y, Math.sin(yaw) * radius);
-  // Face outward, then cheat a little toward the camera so a profile view
-  // still shows iris rather than the side of an eyeball.
-  object.rotation.set(0, -yaw * 0.72, 0);
+  /*
+   * Face outward, then cheat toward the camera.
+   *
+   * The game is played from a locked side-on camera, so a feature that
+   * honestly faces the direction the fighter is walking is seen edge-on for
+   * the entire match. At 0.72 the irises still sat far enough round that the
+   * near eye read as a blank white ball in play while looking perfectly fine
+   * in the three-quarter character-select portrait — which is exactly the trap
+   * of judging a model in the view it is not played in. 0.86 costs a little
+   * accuracy in the portrait and buys a face in the frame that matters.
+   */
+  object.rotation.set(0, -yaw * 0.86, 0);
   return object;
-}
-
-/**
- * Points an object's local +Z straight out from the head centre.
- *
- * Ring and disc geometry has its axis on +Z, so a goggle rim mounted with only
- * a yaw applied ends up edge-on — which is how the lens read as a metal handle
- * sitting on the skull rather than a lens looking forward.
- */
-function faceOutward(object: THREE.Object3D): void {
-  object.lookAt(object.position.clone().multiplyScalar(3));
 }
 
 /** Half-shell used for eyelids. */
@@ -309,6 +309,21 @@ function capGeometry(radius: number): THREE.SphereGeometry {
 // --------------------------------------------------------------- context
 
 type EyeResult = { group: THREE.Group; lid: THREE.Object3D; brow: THREE.Object3D };
+
+/**
+ * A darker, less saturated version of a colour, for lines drawn on a surface.
+ *
+ * The mouths were being drawn in whatever contrasting material was to hand —
+ * the accent orange on the gecko, near-black on the frog — and on a light hide
+ * both read as a painted bar stuck across the face rather than as an opening.
+ * A lip is the same material as the skin around it with the light kept off it,
+ * so deriving it from the body colour is both truer and self-maintaining as
+ * the palette moves.
+ */
+function shadeOf(color: number, drop = 0.32): number {
+  const { L, C, h } = toOklch(new THREE.Color().setHex(color, THREE.SRGBColorSpace));
+  return oklch(Math.max(0.08, L * (1 - drop)), C * 0.62, h).getHex(THREE.SRGBColorSpace);
+}
 
 type BuildContext = {
   materials: MaterialLibrary;
@@ -321,6 +336,8 @@ type BuildContext = {
   accent: THREE.MeshStandardMaterial;
   /** Costume fabric. */
   cloth: THREE.MeshStandardMaterial;
+  /** Lips and mouth seams: the body colour with the light taken off it. */
+  mouthLine: THREE.MeshStandardMaterial;
   /** Straps, gloves, boots. */
   leather: THREE.MeshStandardMaterial;
   geometries: THREE.BufferGeometry[];
@@ -365,14 +382,23 @@ function buildEye(ctx: BuildContext, radius: number, browTilt: number): EyeResul
   sclera.scale.set(radius, radius * 1.08, radius * 0.92);
   group.add(sclera);
 
+  /*
+   * A big iris on a small sclera.
+   *
+   * It was the other way round, and from the locked side camera the near eye
+   * foreshortened into a white ball with a dark chip on its edge. The
+   * character-select portrait looks straight at the face and hid the problem
+   * completely — the iris has to be sized for the oblique view, which is the
+   * only one the match is played in.
+   */
   const iris = mesh(SPHERE, ctx.materials.iris, 'iris');
-  iris.scale.set(radius * 0.4, radius * 0.62, radius * 0.58);
-  iris.position.set(radius * 0.78, 0, 0);
+  iris.scale.set(radius * 0.52, radius * 0.8, radius * 0.76);
+  iris.position.set(radius * 0.72, 0, 0);
   group.add(iris);
 
   const pupil = mesh(SMALL_SPHERE, ctx.materials.eyeDark, 'pupil');
-  pupil.scale.set(radius * 0.26, radius * 0.34, radius * 0.32);
-  pupil.position.set(radius * 0.96, 0, 0);
+  pupil.scale.set(radius * 0.3, radius * 0.44, radius * 0.42);
+  pupil.position.set(radius * 0.94, 0, 0);
   group.add(pupil);
 
   // Unlit highlight: a real specular would swim as the fighter turns. Dropped
@@ -380,8 +406,10 @@ function buildEye(ctx: BuildContext, radius: number, browTilt: number): EyeResul
   // for something under a pixel on a phone.
   if (quality === 'high') {
     const highlight = mesh(SMALL_SPHERE, ctx.materials.catchlight, 'catchlight');
-    highlight.scale.setScalar(radius * 0.15);
-    highlight.position.set(radius * 0.94, radius * 0.42, radius * 0.34);
+    // Small, and sitting on the iris rather than out on the white. At 0.15 of
+    // the eye radius it blew out into a lens flare at any close framing.
+    highlight.scale.setScalar(radius * 0.1);
+    highlight.position.set(radius * 0.92, radius * 0.3, radius * 0.3);
     highlight.castShadow = false;
     group.add(highlight);
   }
@@ -419,20 +447,51 @@ function buildMouth(
   width: number,
   arc: number,
   material: THREE.MeshStandardMaterial,
+  /**
+   * Whether to include the dark interior.
+   *
+   * Only worth it on a muzzle that stands clear of the skull. On a wide mouth
+   * drawn across the front of the head itself, the interior sphere has nowhere
+   * to sit that is not already inside the cranium, and it pushes out through
+   * the underside of the jaw as a dark smear.
+   */
+  interior = true,
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = 'mouth';
 
-  const lipGeometry = new THREE.TorusGeometry(width, width * 0.11, 8, seg.radial, arc);
+  // Thin. At 0.115 of the ring radius the tube stood well proud of a wide
+  // mouth and caught the key light along its whole length, which is what made
+  // it read as a bar laid on the face instead of a seam in it.
+  const lipGeometry = new THREE.TorusGeometry(width, width * 0.062, 7, seg.radial, arc);
   ctx.geometries.push(lipGeometry);
   const lip = mesh(lipGeometry, material, 'lip');
-  lip.rotation.set(Math.PI / 2, 0, Math.PI / 2 + arc / 2);
+  /*
+   * Aim the arc at +X, which is the way the fighter faces.
+   *
+   * It was aimed at the back of the head. A partial torus runs from angle 0 to
+   * `arc` in the XY plane, so its midpoint sits at arc/2; the old rotation
+   * added another `pi/2 + arc/2` on top of that, which for a typical arc put
+   * the midpoint near 240 degrees — and the following quarter-turn about X
+   * carried it round to face backwards. It went unnoticed because the muzzled
+   * species place their mouth ring out on the snout, where the ring is small
+   * enough that part of it shows anyway; on a wide mouth drawn across the skull
+   * itself, the whole thing hid round the back of the head.
+   *
+   * Euler order is XYZ, which three applies innermost-first: Z, then Y, then X.
+   * So -arc/2 about Z brings the midpoint back to +X, and the quarter-turn
+   * about X then tips the ring from the XY plane into the XZ plane, leaving
+   * that midpoint where it is.
+   */
+  lip.rotation.set(Math.PI / 2, 0, -arc / 2);
   group.add(lip);
 
-  const interior = mesh(SMALL_SPHERE, ctx.materials.eyeDark, 'mouthInterior');
-  interior.scale.set(width * 0.5, width * 0.3, width * 0.72);
-  interior.position.set(-width * 0.12, -width * 0.16, 0);
-  group.add(interior);
+  if (interior) {
+    const inside = mesh(SMALL_SPHERE, ctx.materials.eyeDark, 'mouthInterior');
+    inside.scale.set(width * 0.5, width * 0.3, width * 0.72);
+    inside.position.set(-width * 0.12, -width * 0.16, 0);
+    group.add(inside);
+  }
 
   return group;
 }
@@ -634,43 +693,73 @@ function addScarf(ctx: BuildContext, body: THREE.Group, radius: number, y: numbe
   }
 }
 
-/** Goggles pushed up onto the forehead: strap, two rims, two lenses. */
-/**
- * Goggles pushed up onto the forehead.
- *
- * The strap is a horizontal band sized to the skull's actual radius at that
- * height, so it lies on the head instead of hovering around it, and the rims
- * are mounted on the surface like any other facial feature.
- */
 function addGoggles(ctx: BuildContext, head: THREE.Group, radius: number, height: number): void {
-  const bandT = 0.72;
-  const bandRadius = craniumRadiusAt(radius, bandT) * 1.03;
-  const bandY = (bandT - 0.5) * height;
+  /*
+   * One unit worn on the brow, not two rings stuck to the skull.
+   *
+   * The first version mounted each rim separately by yaw and pitch and pointed
+   * it radially outward. On a head this wide that puts the far rim almost at
+   * the side of the skull, edge-on, and from any three-quarter view it read as
+   * a length of wire hooked over the head — the near rim looked like a monocle
+   * and the far one like a handle. Goggles are a rigid object: both cups face
+   * the same way, they sit side by side across the front of the face, and the
+   * strap is the only part that follows the skull. Building them that way is
+   * both simpler and the only version that reads.
+   */
+  const goggles = new THREE.Group();
+  goggles.name = 'goggles';
 
-  const bandGeo = new THREE.TorusGeometry(bandRadius, radius * 0.075, 8, seg.lathe);
-  ctx.geometries.push(bandGeo);
-  const band = mesh(bandGeo, ctx.leather, 'goggleStrap');
-  place(band, [0, bandY, 0], [Math.PI / 2, 0, 0]);
-  head.add(band);
+  const browT = 0.66;
+  const browY = (browT - 0.5) * height;
+  // Pushed out to the skull's own radius at that height so the cups stand
+  // clear of the forehead instead of sinking into it.
+  goggles.position.set(craniumRadiusAt(radius, browT) * 1.0, browY, 0);
+  // Tipped back, the way goggles pushed up off the eyes actually sit.
+  goggles.rotation.z = -0.3;
+  head.add(goggles);
+
+  const cupRadius = radius * 0.23;
+  const cupDepth = radius * 0.17;
+  const gap = radius * 0.29;
+
+  const cupGeo = new THREE.CylinderGeometry(cupRadius, cupRadius * 0.86, cupDepth, seg.radial, 1, true);
+  const rimGeo = new THREE.TorusGeometry(cupRadius, radius * 0.045, 7, seg.radial);
+  ctx.geometries.push(cupGeo, rimGeo);
 
   for (const side of [-1, 1]) {
-    const rimGeo = new THREE.TorusGeometry(radius * 0.26, radius * 0.06, 8, seg.radial);
-    ctx.geometries.push(rimGeo);
+    // Cylinder and torus both stand on their own axis; a quarter turn about Y
+    // lays them along +X so the cups look where the fighter looks.
+    const cup = mesh(cupGeo, ctx.materials.hardware, 'goggleCup');
+    place(cup, [0, 0, side * gap], [0, 0, Math.PI / 2]);
+    goggles.add(cup);
+
     const rim = mesh(rimGeo, ctx.materials.hardware, 'goggleRim');
-    mountOnSkull(rim, radius, height, 38, 30, side, 1.0);
-    faceOutward(rim);
-    head.add(rim);
+    place(rim, [cupDepth * 0.5, 0, side * gap], [0, Math.PI / 2, 0]);
+    goggles.add(rim);
 
     if (quality === 'high') {
-      const lensGeo = new THREE.CircleGeometry(radius * 0.24, seg.radial);
+      const lensGeo = new THREE.CircleGeometry(cupRadius * 0.94, seg.radial);
       ctx.geometries.push(lensGeo);
       const lens = mesh(lensGeo, ctx.materials.lens, 'goggleLens');
-      mountOnSkull(lens, radius, height, 38, 30, side, 1.01);
-      faceOutward(lens);
+      place(lens, [cupDepth * 0.44, 0, side * gap], [0, Math.PI / 2, 0]);
       lens.castShadow = false;
-      head.add(lens);
+      goggles.add(lens);
     }
   }
+
+  // Bridge across the nose, joining the cups into one object.
+  const bridge = mesh(SPHERE, ctx.leather, 'goggleBridge');
+  bridge.scale.set(cupDepth * 0.34, cupRadius * 0.34, gap * 0.9);
+  bridge.position.set(0, -cupRadius * 0.1, 0);
+  goggles.add(bridge);
+
+  // Strap around the skull, at the height the cups sit.
+  const bandRadius = craniumRadiusAt(radius, browT) * 1.02;
+  const bandGeo = new THREE.TorusGeometry(bandRadius, radius * 0.062, 8, seg.lathe);
+  ctx.geometries.push(bandGeo);
+  const band = mesh(bandGeo, ctx.leather, 'goggleStrap');
+  place(band, [0, browY, 0], [Math.PI / 2, 0, 0]);
+  head.add(band);
 }
 
 /** Small pack worn on the back. */
@@ -715,12 +804,15 @@ function buildGecko(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: 
   snout.position.set(r * 0.78, -r * 0.18, 0);
   head.add(snout);
 
+  // Tucked under the skull rather than hung off the front of it. At 0.6r out
+  // and 0.58r long it cleared the head's silhouette from the side and read as
+  // a pale wedge stuck to the throat.
   const jaw = mesh(SPHERE, ctx.belly, 'jaw');
-  jaw.scale.set(r * 0.58, r * 0.24, r * 0.48);
-  jaw.position.set(r * 0.6, -r * 0.42, 0);
+  jaw.scale.set(r * 0.46, r * 0.2, r * 0.44);
+  jaw.position.set(r * 0.46, -r * 0.4, 0);
   head.add(jaw);
 
-  head.add(place(buildMouth(ctx, r * 0.44, Math.PI * 0.7, ctx.accent), [r * 0.82, -r * 0.28, 0]));
+  head.add(place(buildMouth(ctx, r * 0.4, Math.PI * 0.78, ctx.mouthLine), [r * 0.7, -r * 0.3, 0]));
 
   for (const side of [-1, 1]) {
     const eye = buildEye(ctx, r * 0.34, side * 0.2 - 0.12);
@@ -734,11 +826,19 @@ function buildGecko(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: 
     head.add(nostril);
   }
 
-  // Dorsal crest: soft spines tapering down the spine line.
+  /*
+   * Dorsal crest.
+   *
+   * Roughly doubled from the first pass, which set each spine at about a tenth
+   * of the torso radius — thinner than the seam it sat on, and invisible at any
+   * distance the game is actually played from. The generated gecko carries a
+   * bold orange run down its back and it is most of what identifies the
+   * silhouette as a lizard rather than a generic mascot.
+   */
   for (let i = 0; i < 9; i += 1) {
     const t = i / 8;
     const spine = mesh(CONE, ctx.accent, 'crest');
-    spine.scale.set(p.torsoRadius * 0.11, p.torsoRadius * (0.34 - t * 0.2), p.torsoRadius * 0.09);
+    spine.scale.set(p.torsoRadius * 0.2, p.torsoRadius * (0.62 - t * 0.36), p.torsoRadius * 0.15);
     place(
       spine,
       [-t * p.torsoRadius * 1.35, p.torsoHeight * (0.95 - t * 0.2), 0],
@@ -787,23 +887,107 @@ function buildGecko(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: 
 function buildFrog(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: Proportions): void {
   const r = p.headRadius;
 
-  const jaw = mesh(SPHERE, ctx.belly, 'jaw');
-  jaw.scale.set(r * 0.66, r * 0.26, r * 0.7);
-  jaw.position.set(r * 0.3, -r * 0.36, 0);
-  head.add(jaw);
+  /*
+   * A frog is a mouth with a body attached, and the mouth was the part that
+   * did not work. It was built as a ring of radius 0.74r placed half a radius
+   * forward, so it reached past the front of a 0.66r head and read as a flat
+   * salmon plank sticking out of the face. A wide mouth belongs on the skull,
+   * not in front of it: centring the ring and sizing it to the head turns the
+   * same geometry into a line that follows the muzzle.
+   */
+  // A throat, not a bib. At half again this size it merged with the belly
+  // patch below it into one pale mass running the whole front of the model.
+  const throat = mesh(SPHERE, ctx.belly, 'throat');
+  throat.scale.set(r * 0.44, r * 0.26, r * 0.5);
+  throat.position.set(r * 0.42, -r * 0.34, 0);
+  head.add(throat);
 
-  head.add(place(buildMouth(ctx, r * 0.74, Math.PI * 0.92, ctx.accent), [r * 0.5, -r * 0.3, 0]));
+  /*
+   * The mouth is the frog, and it kept failing for the same reason the boar's
+   * snout did: its radius was a guessed multiple of the head radius rather
+   * than the radius the skull actually has at that height. Guess too small and
+   * the ring sits inside the head, invisible; too large and it juts out as a
+   * plank. `craniumRadiusAt` is the same function the lathe is built from, so
+   * asking it puts the line on the surface by construction.
+   *
+   * Drawn dark rather than in the accent salmon: a line this wide in a
+   * saturated colour competes with the eyes for the face, and on a cyan head it
+   * reads as paint. Dark reads as an opening.
+   */
+  /*
+   * A muzzle, after several attempts without one.
+   *
+   * The frog was the only fighter built as a bare sphere with features painted
+   * on it, and it was the only one that would not read. Wrapping the mouth
+   * around the skull is the anatomically truer answer and it kept coming out as
+   * a slot cut in a ball, at every width and every tone tried: a straight dark
+   * line across a smooth dome has nothing to be the edge of.
+   *
+   * Every other species here works because a muzzle projects forward and the
+   * mouth sits on the part that projects — the line then divides two forms
+   * instead of interrupting one. A frog gets a wide, low, shallow muzzle rather
+   * than a snout, which keeps the species read while joining the construction
+   * the rest of the cast already uses.
+   */
+  /*
+   * Sized against the skull rather than guessed at.
+   *
+   * The lathe's widest radius is `r`, and at the height the muzzle sits
+   * `craniumRadiusAt` still returns about 0.99r — so anything centred inside
+   * about 0.7r with a radius under 0.3r is entirely swallowed, which is what
+   * happened to the first two attempts and to the mouth ring both times. The
+   * muzzle centre therefore sits *past* the head radius at 1.09r, with its back
+   * still inside the skull at 0.73r and its tip clear at 1.45r, and the mouth
+   * ring shares that centre so the seam lands on the muzzle's own front face by
+   * construction instead of by trial.
+   */
+  const muzzle = mesh(SPHERE, ctx.skin, 'muzzle');
+  muzzle.scale.set(r * 0.36, r * 0.32, r * 0.62);
+  muzzle.position.set(r * 1.09, -r * 0.14, 0);
+  head.add(muzzle);
 
-  // Eyes ride on domes on top of the skull — the frog silhouette.
+  const chin = mesh(SPHERE, ctx.belly, 'chin');
+  chin.scale.set(r * 0.28, r * 0.15, r * 0.46);
+  chin.position.set(r * 1.02, -r * 0.38, 0);
+  head.add(chin);
+
+  head.add(
+    place(buildMouth(ctx, r * 0.35, Math.PI * 0.86, ctx.mouthLine, false), [
+      r * 1.09,
+      -r * 0.2,
+      0,
+    ]),
+  );
+
   for (const side of [-1, 1]) {
+    const nostril = mesh(SMALL_SPHERE, ctx.mouthLine, 'nostril');
+    nostril.scale.setScalar(r * 0.05);
+    nostril.position.set(r * 1.3, r * 0.02, side * r * 0.15);
+    head.add(nostril);
+  }
+
+  /*
+   * Eye domes are placed outright rather than mounted by yaw and pitch.
+   *
+   * `mountOnSkull` seats a feature on the lathe, and the lathe narrows sharply
+   * toward the crown — so asking for a high pitch does not raise a feature up
+   * the side of the head, it walks it in toward the centreline where the skull
+   * has almost no radius left. At pitch 52 both domes collapsed into a pair of
+   * bumps touching at the top of the head. Frog eyes are supposed to stand
+   * proud of the skull anyway, which is exactly the case the mounting helper
+   * is not for.
+   */
+  for (const side of [-1, 1]) {
+    const domeY = p.headHeight * 0.4;
+    const domeZ = side * r * 0.44;
     const dome = mesh(SPHERE, ctx.skin, 'eyeDome');
-    dome.scale.setScalar(r * 0.42);
-    mountOnSkull(dome, r, p.headHeight, 52, 40, side, 0.9);
+    dome.scale.set(r * 0.46, r * 0.44, r * 0.46);
+    dome.position.set(r * 0.3, domeY, domeZ);
     head.add(dome);
 
-    const eye = buildEye(ctx, r * 0.34, side * 0.24);
-    mountOnSkull(eye.group, r, p.headHeight, 52, 44, side, 1.08);
-    eye.group.rotateZ(0.42);
+    const eye = buildEye(ctx, r * 0.32, side * 0.24);
+    eye.group.position.set(r * 0.42, domeY + r * 0.1, domeZ);
+    eye.group.rotation.set(0, -side * 0.34, 0.32);
     head.add(eye.group);
     ctx.eyes.push(eye);
   }
@@ -818,11 +1002,15 @@ function buildFrog(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: P
   for (let i = 0; i < 6; i += 1) {
     const t = i / 5;
     const spot = mesh(SPHERE, ctx.accent, 'spot');
-    spot.scale.set(p.torsoRadius * 0.2, p.torsoRadius * 0.06, p.torsoRadius * 0.17);
+    spot.scale.set(p.torsoRadius * 0.19, p.torsoRadius * 0.07, p.torsoRadius * 0.16);
+    // Follow the barrel rather than a straight line across it: the torso is a
+    // lathe, so a constant offset that sits on the surface at the shoulder is
+    // hanging clear of it by the hips.
+    const alongBack = Math.cos((t - 0.4) * 1.9);
     place(spot, [
-      p.torsoRadius * 0.3 - t * p.torsoRadius * 1.5,
-      p.torsoHeight * (0.94 - Math.abs(t - 0.5) * 0.18),
-      ((i % 2) - 0.5) * p.torsoRadius * 0.7,
+      p.torsoRadius * (0.24 - t * 1.0) * alongBack,
+      p.torsoHeight * (0.9 - Math.abs(t - 0.45) * 0.3),
+      ((i % 2) - 0.5) * p.torsoRadius * 0.52,
     ]);
     body.add(spot);
   }
@@ -833,21 +1021,31 @@ function buildFrog(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: P
 function buildBoar(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: Proportions): void {
   const r = p.headRadius;
 
-  const snoutGeo = limbGeometry(r * 0.44, r * 0.4, r * 0.78);
+  /*
+   * The snout has to clear the skull, and it did not.
+   *
+   * It was a cylinder half a radius long centred at 0.5r, so it spanned 0.06r
+   * to 0.53r on a head of radius r — every part of it buried. All that showed
+   * was the pale nose pad floating at 1.22r and the tusks beside it, which is
+   * why the muzzle read as a separate object stuck to the side of the face.
+   * Lengthening it and pushing it out to 0.86r puts the tip at 1.36r with the
+   * root inside the cranium, so it emerges the way a snout should.
+   */
+  const snoutGeo = limbGeometry(r * 0.46, r * 0.42, r * 1.0);
   ctx.geometries.push(snoutGeo);
   const snout = mesh(snoutGeo, ctx.skin, 'snout');
-  place(snout, [r * 0.5, -r * 0.18, 0], [0, 0, -Math.PI / 2]);
+  place(snout, [r * 0.86, -r * 0.2, 0], [0, 0, -Math.PI / 2]);
   head.add(snout);
 
   const nosePad = mesh(SPHERE, ctx.belly, 'nosePad');
-  nosePad.scale.set(r * 0.1, r * 0.26, r * 0.28);
-  nosePad.position.set(r * 1.22, -r * 0.18, 0);
+  nosePad.scale.set(r * 0.11, r * 0.28, r * 0.3);
+  nosePad.position.set(r * 1.34, -r * 0.2, 0);
   head.add(nosePad);
 
   for (const side of [-1, 1]) {
     const nostril = mesh(SMALL_SPHERE, ctx.materials.eyeDark, 'nostril');
     nostril.scale.set(r * 0.035, r * 0.075, r * 0.06);
-    nostril.position.set(r * 1.3, -r * 0.16, side * r * 0.12);
+    nostril.position.set(r * 1.42, -r * 0.18, side * r * 0.12);
     head.add(nostril);
 
     const eye = buildEye(ctx, r * 0.24, side * 0.2 - 0.3);
@@ -857,7 +1055,7 @@ function buildBoar(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p: P
 
     const tusk = mesh(CONE, ctx.materials.ivory, 'tusk');
     tusk.scale.set(r * 0.12, r * 0.7, r * 0.12);
-    place(tusk, [r * 1.06, -r * 0.34, side * r * 0.26], [side * 0.28, 0, -0.7]);
+    place(tusk, [r * 1.18, -r * 0.36, side * r * 0.26], [side * 0.28, 0, -0.7]);
     head.add(tusk);
 
     const ear = mesh(SPHERE, ctx.skin, 'ear');
@@ -911,7 +1109,7 @@ function buildRaccoon(ctx: BuildContext, body: THREE.Group, head: THREE.Group, p
   nose.position.set(r * 1.16, -r * 0.06, 0);
   head.add(nose);
 
-  head.add(place(buildMouth(ctx, r * 0.3, Math.PI * 0.6, ctx.materials.eyeDark), [r * 1, -r * 0.34, 0]));
+  head.add(place(buildMouth(ctx, r * 0.3, Math.PI * 0.62, ctx.mouthLine), [r * 0.94, -r * 0.34, 0]));
 
   // The bandit mask is a band worn round the head at eye height, so it is
   // built exactly that way: a thin horizontal ring sized to the skull. The
@@ -1145,7 +1343,7 @@ const BUILDERS: Record<string, SpeciesBuilder> = {
  */
 const PROPORTIONS: Record<string, Proportions> = {
   gecko: { torsoRadius: 0.42, torsoHeight: 0.9, belly: 0.4, headRadius: 0.62, headHeight: 0.94, headY: 1.24, legLength: 0.44, armUpper: 0.3, armLower: 0.28, limbThickness: 0.115, footSize: 0.19, scale: 1 },
-  frog: { torsoRadius: 0.5, torsoHeight: 0.78, belly: 0.6, headRadius: 0.66, headHeight: 0.86, headY: 1.08, legLength: 0.36, armUpper: 0.28, armLower: 0.26, limbThickness: 0.11, footSize: 0.2, scale: 0.99 },
+  frog: { torsoRadius: 0.5, torsoHeight: 0.78, belly: 0.6, headRadius: 0.68, headHeight: 0.8, headY: 1.06, legLength: 0.36, armUpper: 0.28, armLower: 0.26, limbThickness: 0.11, footSize: 0.2, scale: 0.99 },
   boar: { torsoRadius: 0.52, torsoHeight: 0.9, belly: 0.5, headRadius: 0.6, headHeight: 0.9, headY: 1.16, legLength: 0.46, armUpper: 0.3, armLower: 0.26, limbThickness: 0.13, footSize: 0.19, scale: 1.06 },
   raccoon: { torsoRadius: 0.43, torsoHeight: 0.88, belly: 0.44, headRadius: 0.6, headHeight: 0.9, headY: 1.2, legLength: 0.44, armUpper: 0.3, armLower: 0.3, limbThickness: 0.115, footSize: 0.19, scale: 0.99 },
   tortoise: { torsoRadius: 0.46, torsoHeight: 0.74, belly: 0.4, headRadius: 0.5, headHeight: 0.76, headY: 1.06, legLength: 0.32, armUpper: 0.26, armLower: 0.24, limbThickness: 0.13, footSize: 0.2, scale: 1.04 },
@@ -1162,7 +1360,11 @@ const PROPORTIONS: Record<string, Proportions> = {
  * spend the entire frame budget on decoration. Only the parts that animate stay
  * separate.
  */
-function bakeStatic(container: THREE.Group, exclude: Set<THREE.Object3D>): void {
+function bakeStatic(
+  container: THREE.Group,
+  exclude: Set<THREE.Object3D>,
+  materials: MaterialLibrary,
+): void {
   container.updateMatrixWorld(true);
   const inverse = container.matrixWorld.clone().invert();
   const byMaterial = new Map<THREE.Material, THREE.BufferGeometry[]>();
@@ -1208,7 +1410,9 @@ function bakeStatic(container: THREE.Group, exclude: Set<THREE.Object3D>): void 
     if (geometries.length > 1) {
       for (const geometry of geometries) geometry.dispose();
     }
-    const baked = new THREE.Mesh(merged, material);
+    // Baked occlusion arrives as a vertex colour after this, so the merged
+    // mesh needs the material variant that reads one.
+    const baked = new THREE.Mesh(merged, materials.shaded(material));
     baked.name = 'baked';
     baked.castShadow = true;
     baked.receiveShadow = true;
@@ -1228,6 +1432,7 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
     materials,
     def,
     skin: materials.hide(def.palette.body),
+    mouthLine: materials.hide(shadeOf(def.palette.body), 0.8),
     belly: materials.hide(def.palette.belly, 0.72),
     accent: materials.hide(def.palette.accent, 0.58),
     cloth: materials.fabric(def.palette.cloth),
@@ -1235,7 +1440,7 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
     geometries,
     eyes,
   };
-  const owned = [ctx.skin, ctx.belly, ctx.accent, ctx.cloth, ctx.leather];
+  const owned = [ctx.skin, ctx.belly, ctx.accent, ctx.cloth, ctx.leather, ctx.mouthLine];
 
   const prop = PROPORTIONS[def.id] ?? PROPORTIONS.gecko;
   const root = new THREE.Group();
@@ -1262,9 +1467,12 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
   geometries.push(torsoGeo);
   body.add(mesh(torsoGeo, ctx.skin, 'torso'));
 
+  // Wider than it is deep and sitting square on the front of the torso. The
+  // first version was narrow in z and offset forward, which from any angle but
+  // dead-on read as a pale stripe down one flank rather than a pale underside.
   const bellyPatch = mesh(SPHERE, ctx.belly, 'bellyPatch');
-  bellyPatch.scale.set(prop.torsoRadius * 0.62, prop.torsoHeight * 0.42, prop.torsoRadius * 0.44);
-  bellyPatch.position.set(prop.torsoRadius * 0.44, prop.torsoHeight * 0.4, 0);
+  bellyPatch.scale.set(prop.torsoRadius * 0.52, prop.torsoHeight * 0.46, prop.torsoRadius * 0.66);
+  bellyPatch.position.set(prop.torsoRadius * 0.52, prop.torsoHeight * 0.36, 0);
   body.add(bellyPatch);
 
   for (const side of [-1, 1]) {
@@ -1309,9 +1517,28 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
     animated.add(eye.lid);
     animated.add(eye.brow);
   }
-  bakeStatic(head, animated);
-  bakeStatic(throwArm, new Set());
-  bakeStatic(body, new Set<THREE.Object3D>([head, throwArm]));
+  bakeStatic(head, animated, materials);
+  bakeStatic(throwArm, new Set(), materials);
+  bakeStatic(body, new Set<THREE.Object3D>([head, throwArm]), materials);
+
+  // Lids and brows sat out the merge, so they need the vertex-colour variant
+  // handed to them directly or the bake below would leave them unshaded and
+  // floating in front of a face that had been shaded.
+  for (const eye of eyes) {
+    for (const part of [eye.lid, eye.brow]) {
+      const asMesh = part as THREE.Mesh;
+      if (asMesh.isMesh && !Array.isArray(asMesh.material)) {
+        asMesh.material = materials.shaded(asMesh.material);
+      }
+    }
+  }
+
+  /*
+   * Occlusion is baked before the root is scaled, so the radius in
+   * OcclusionOptions is stated in the same units the proportions table uses
+   * and does not silently change meaning when FIGHTER_SCALE moves.
+   */
+  const occlusion = bakeAmbientOcclusion(root);
 
   root.scale.setScalar(prop.scale * FIGHTER_SCALE);
 
@@ -1339,7 +1566,7 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
     materials: owned,
     height: (prop.legLength + prop.torsoHeight + prop.headHeight * 0.9) * prop.scale * FIGHTER_SCALE,
     localHeight: prop.legLength + prop.torsoHeight + prop.headHeight * 0.9,
-    diagnostics: { meshes, triangles: Math.round(triangles) },
+    diagnostics: { meshes, triangles: Math.round(triangles), occlusion },
   };
 }
 

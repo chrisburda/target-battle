@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cast sheet</title>
+    <style>
+      :root { --hairline: rgba(224,224,224,0.16); --muted: #b6b6b6; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #14181d; color: #fafafa;
+             font-family: 'proxima-nova', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      header { padding: 18px 20px 2px; }
+      h1 { margin: 0 0 4px; font-size: 22px; font-weight: 800; }
+      p { margin: 0; color: var(--muted); font-size: 13px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 14px 20px; }
+      .card { border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden;
+              background: #1d1d1d; }
+      .card img { display: block; width: 100%; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Cast sheet</h1>
+      <p>The six fighters as the character-select portrait renders them. Regenerate with
+        <code>node scripts/character-sheet.mjs --out artifacts/chars-ao</code>, then reload.</p>
+    </header>
+    <div class="grid" id="grid"></div>
+    <script type="module">
+      // Cache-busted on every load: the portraits are re-rendered between
+      // iterations to the same filenames, and a stale cache is a good way to
+      // spend ten minutes tuning a model that already looks the way you wanted.
+      const stamp = String(performance.timeOrigin | 0);
+      const files = ['1-pip', '2-bruno', '3-tusk', '4-sly', '5-bunker', '6-zip'];
+      document.querySelector('#grid').innerHTML = files
+        .map((f) => `<div class="card"><img src="/artifacts/chars-ao/${f}.png?v=${stamp}" alt="${f}" /></div>`)
+        .join('');
+    </script>
+  </body>
+</html>

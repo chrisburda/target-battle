@@ -1516,6 +1516,16 @@ export class Game {
         materials: this.materials.materialCount,
         particles: this.vfx.activeParticles,
         projectiles: this.projectiles.liveCount,
+        // Occlusion is baked per fighter at match start. It is the one piece
+        // of build work heavy enough to be felt, so it reports its own cost
+        // rather than leaving a slow start to be guessed at.
+        occlusionBake: this.fighters.map((fighter) => ({
+          animal: fighter.animal.id,
+          ms: fighter.model.diagnostics.occlusion.ms,
+          samples: fighter.model.diagnostics.occlusion.samples,
+          min: fighter.model.diagnostics.occlusion.min,
+          mean: fighter.model.diagnostics.occlusion.mean,
+        })),
       },
       renderer: diagnostics,
       canvas: {

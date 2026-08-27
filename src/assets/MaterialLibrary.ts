@@ -16,6 +16,7 @@ export class MaterialLibrary {
   private readonly flatCache = new Map<number, THREE.MeshStandardMaterial>();
   private readonly foliageCache = new Map<number, THREE.MeshStandardMaterial>();
   private readonly matteCache = new Map<number, THREE.MeshStandardMaterial>();
+  private readonly shadedCache = new Map<THREE.Material, THREE.Material>();
   private readonly owned: THREE.Material[] = [];
 
   /** Terrain slab. Vertex colours carry the strata; the map only adds grain. */
@@ -334,6 +335,30 @@ export class MaterialLibrary {
   }
 
   /**
+   * A vertex-coloured twin of a material, so baked occlusion can modulate it.
+   *
+   * Cloning rather than switching `vertexColors` on the shared instance: these
+   * roles are handed to the world as well as to the fighters, and the world's
+   * merged prop geometry carries no colour attribute — flipping the flag on the
+   * original would render every mushroom stem black.
+   *
+   * Unlit materials come back untouched. A catchlight or an ink outline is
+   * authored to ignore the lighting, and putting shadow into something whose
+   * whole job is to stay constant is how a highlight ends up dimmer in the eye
+   * socket it was drawn to sit in.
+   */
+  shaded<T extends THREE.Material>(source: T): T {
+    if ((source as unknown as { isMeshBasicMaterial?: boolean }).isMeshBasicMaterial) return source;
+    const hit = this.shadedCache.get(source);
+    if (hit) return hit as T;
+    const clone = source.clone() as T & { vertexColors: boolean };
+    clone.vertexColors = true;
+    this.own(clone);
+    this.shadedCache.set(source, clone);
+    return clone;
+  }
+
+  /**
    * Smooth-shaded prop material keyed by colour.
    *
    * The counterpart to `flat`, and the right default for anything that is
@@ -389,6 +414,7 @@ export class MaterialLibrary {
     this.flatCache.clear();
     this.foliageCache.clear();
     this.matteCache.clear();
+    this.shadedCache.clear();
   }
 
   private own<T extends THREE.Material>(material: T): T {

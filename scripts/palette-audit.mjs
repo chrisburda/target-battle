@@ -22,6 +22,7 @@ import {
   chromaCeiling,
   aerial,
 } from '../src/assets/palette.ts';
+import { ANIMALS } from '../src/game/roster.ts';
 
 const hex = (c) => '#' + c.getHexString(THREE.SRGBColorSpace);
 
@@ -85,3 +86,18 @@ console.log(`\n  ${over} of ${total} exceeded the measured chroma ceiling`);
 
 console.log('\nAerial recession applied to the near canopy green');
 for (const d of [0, 0.32, 0.6, 0.82, 1]) row(`distance ${d}`, aerial(FLORA.canopy, d));
+
+
+console.log();
+console.log('FIGHTER PALETTES, same units');
+let fighterOver = 0;
+let fighterTotal = 0;
+for (const animal of ANIMALS) {
+  console.log('  ' + animal.name + '  (' + animal.species + ')');
+  for (const [role, value] of Object.entries(animal.palette)) {
+    fighterTotal += 1;
+    if (row('    ' + role, new THREE.Color().setHex(value, THREE.SRGBColorSpace), true)) fighterOver += 1;
+  }
+}
+console.log();
+console.log('  ' + fighterOver + ' of ' + fighterTotal + ' fighter colours exceed the measured ceiling');
