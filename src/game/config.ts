@@ -142,6 +142,36 @@ export const AIM = {
   maxAngle: 88,
   /** Number of dots drawn in the predicted-arc guide. */
   guideSamples: 46,
+  /**
+   * How much landing accuracy the solver may give up to get a flatter shot,
+   * when no launch produces a clean hit.
+   *
+   * Only the fallback path uses it — see `findBestLaunch`. Where a clean hit
+   * exists the flattest one wins outright, because every clean angle is
+   * equally correct and only one of them is readable.
+   */
+  flatnessTolerance: 1.1,
+  /**
+   * The band of launch angles a shot is allowed to prefer, flattest first.
+   *
+   * Holding the speed fixed and solving for an angle is what produced
+   * near-vertical arcs: for a target the base speed cannot reach flat, the
+   * only answer left is to throw it almost straight up. Since the launch speed
+   * is a variable the interval already moves, the solver picks a comfortable
+   * angle from this band and solves for the speed that reaches the target at
+   * it — so the shape of the arc is chosen, and the effort needed to make it
+   * is what falls out.
+   */
+  preferredAngles: { from: 32, to: 58, step: 2 },
+  /**
+   * How far the solved speed may sit either side of the round's base speed.
+   *
+   * The ceiling is what keeps range meaningful: a target that needs more than
+   * this much throw is out of reach, which is how the heavier rounds stay
+   * short-ranged and how "blocked" remains a real answer rather than something
+   * the solver can always engineer its way out of.
+   */
+  speedRange: { min: 0.55, max: 1.55 },
   guideSeconds: 2.4,
   /** A perfect shot landing within this of the target counts as a clean line. */
   cleanLineUnits: 1.8,
@@ -163,6 +193,8 @@ export const CAMERA = {
    * neither fighter sits on the very edge of the frame.
    */
   engagementMargin: 26,
+  /** Clearance kept above the trajectory apex while aiming. */
+  arcMargin: 7,
   /** Smoothing time constants (seconds to close ~63% of the gap). */
   positionTau: 0.28,
   widthTau: 0.34,

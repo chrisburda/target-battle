@@ -12,13 +12,15 @@
     "inspect:canvas": "node scripts/inspect-threejs-canvas.mjs",
     "capture:states": "node scripts/capture-states.mjs",
     "playtest:bot": "node scripts/bot-playtest.mjs",
-    "verify:all": "npm run build && npm run test && npm run playtest:bot && npm run capture:states",
+    "verify:all": "npm run build && npm run test && npm run playtest:bot && npm run verify:assets && npm run verify:arcs && npm run verify:perklines",
     "capture:characters": "node scripts/character-sheet.mjs",
     "gen:character": "node scripts/tripo-character.mjs",
     "rig:cast": "node scripts/rig-cast.mjs",
     "optimise:glb": "node scripts/glb-optimise.mjs --all",
     "verify:assets": "node scripts/verify-assets.mjs",
-    "gen:props": "node scripts/gen-props.mjs"
+    "gen:props": "node scripts/gen-props.mjs",
+    "verify:arcs": "node scripts/probe-arcs.mjs --seeds 24",
+    "verify:perklines": "node scripts/probe-perklines.mjs"
   },
   "dependencies": {
     "three": "^0.184.0"

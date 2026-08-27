@@ -66,10 +66,14 @@ interface ThreeGameDiagnostics {
 }
 
 interface ThreeGameTestHooks {
+  /** Forces a cast and rebuilds every surface that shows it. */
+  setCast?: (kind: 'built' | 'generated') => Promise<void>;
   /** Swaps to the generated cast and resolves once it has downloaded. */
   useGeneratedCast?: () => Promise<void>;
   /** Starts a throw on the active fighter, for animation capture. */
   throwNow?: () => boolean;
+  /** The shot being aimed, and whether its arc fits the frame. */
+  inspectShot?: () => Record<string, string | number | boolean> | null;
   /** Name of the model in the active hand, to prove which factory built it. */
   heldRoundName?: () => string | null;
   /** Picks a round by id, so a capture can show one that is not the default. */

@@ -41,12 +41,21 @@ const avatars = () =>
 await page.goto('http://127.0.0.1:5188/?qa=1', { waitUntil: 'load' });
 await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0) > 5);
 
-// The first paint uses the built cast on purpose — the screen is not held for
-// a download. Capture it before the swap lands.
+/*
+ * Both directions driven explicitly.
+ *
+ * The generated set loads at boot, so simply reading the screen before and
+ * after would be racing that load — and did, reporting every avatar stale
+ * whenever the fetch won. Forcing built, then generated, removes the race and
+ * still tests the thing that broke: roster rows holding the portraits they
+ * were first built with.
+ */
+await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.setCast?.('built'));
+await page.waitForTimeout(400);
 const before = await avatars();
 
-await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.useGeneratedCast?.());
-await page.waitForTimeout(1200);
+await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.setCast?.('generated'));
+await page.waitForTimeout(600);
 const after = await avatars();
 
 let swapped = 0;

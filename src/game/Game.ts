@@ -3,7 +3,7 @@ import { Loop } from '../core/Loop';
 import { AIM, AI, CAMERA, INTERVAL, MATCH, PHYSICS, POWER, VFX } from './config';
 import { AMMO, ANIMALS, getAmmo, getAnimal } from './roster';
 import { IntervalScorer, planInterval, resolveShot, type IntervalPlan } from './IntervalScorer';
-import { findBestAngle, simulateShot } from './ballistics';
+import { findBestLaunch, simulateShot } from './ballistics';
 import { createSeededRandom } from '../utils/random';
 import { MaterialLibrary } from '../assets/MaterialLibrary';
 import { disposeProceduralTextures, proceduralTextureCount } from '../assets/ProceduralTextures';
@@ -12,6 +12,7 @@ import { disposeSharedAnimalGeometry, setModelQuality } from '../assets/modelFac
 import {
   getFighterModelSource,
   prepareGeneratedAssets,
+  setFighterModelSource,
 } from '../assets/modelFactories/fighterModels';
 import { disposeSharedAmmoGeometry } from '../assets/modelFactories/AmmoFactory';
 import { Terrain } from '../systems/Terrain';
@@ -50,6 +51,16 @@ import type { PhaseName, PlayerConfig } from './types';
 export type LineQuality = 'clear' | 'splash' | 'blocked';
 
 export type TargetSolution = {
+  /** Highest point the perfect shot reaches, so the camera can frame the arc. */
+  apex: number;
+  /**
+   * Launch speed this solution needs, which is no longer a constant.
+   *
+   * The solver picks a comfortable angle and works out the effort required to
+   * reach the target at it, so speed varies per shot. A perfect interval fires
+   * exactly this; the interval's own multiplier scales it either side.
+   */
+  speed: number;
   slot: number;
   /** Solved launch angle for a perfect interval. */
   angle: number;
@@ -644,24 +655,26 @@ export class Game {
     fighter.getHandPosition(this.tmpVec);
     target.getCenter(this.tmpVec2);
 
-    const speed = this.perfectSpeed(fighter, ammoId);
+    const baseSpeed = this.perfectSpeed(fighter, ammoId);
     const wind = this.wind * fighter.animal.perk.wind;
-    const solved = findBestAngle(
+    const solved = findBestLaunch(
       this.terrain,
       this.tmpVec,
       fighter.facing,
-      speed,
+      baseSpeed,
       wind,
       this.tmpVec2.x,
       this.tmpVec2.y,
     );
     const angle = THREE.MathUtils.clamp(solved.angle, AIM.minAngle, AIM.maxAngle);
+    const speed = solved.speed;
 
     // Re-run the winning angle to find where the shot actually ends up: the
     // sweep minimises error, which is not the same as reaching the target. A
     // ridge in the way or a target out of range shows up right here.
     const shot = simulateShot(this.terrain, this.tmpVec, angle, fighter.facing, speed, wind);
     const missDistance = Math.abs(shot.x - this.tmpVec2.x);
+    const apex = shot.apex;
     const radius = getAmmo(ammoId).radius * fighter.animal.perk.blast;
 
     let quality: LineQuality = 'blocked';
@@ -675,6 +688,8 @@ export class Game {
       landingY: shot.y,
       missDistance,
       quality,
+      apex,
+      speed,
       distance: Math.abs(target.position.x - fighter.position.x),
     };
   }
@@ -860,7 +875,11 @@ export class Game {
     // when the hand reaches the release point.
     this.pendingShot = {
       origin: fighter.getHandPosition(new THREE.Vector3()).clone(),
-      speed: this.perfectSpeed(fighter, ammo.id) * outcome.speedMultiplier,
+      // The solution's own speed, not the round's base: the solver chose the
+      // arc and this is what flying it takes. A perfect interval multiplies by
+      // one and lands exactly where the guide promised.
+      speed: (this.turn?.solution?.speed ?? this.perfectSpeed(fighter, ammo.id)) *
+        outcome.speedMultiplier,
       angle: THREE.MathUtils.clamp(fighter.aimAngle + outcome.wobbleDegrees, 1, 89),
       damage: ammo.damage * outcome.damageMultiplier,
       radius: ammo.radius * fighter.animal.perk.blast,
@@ -1434,16 +1453,44 @@ export class Game {
              * pinned to the shooter would hide the thing being chosen.
              */
             const span = Math.abs(target.position.x - fighter.position.x);
-            const wanted = THREE.MathUtils.clamp(
+            let wanted = THREE.MathUtils.clamp(
               span + CAMERA.engagementMargin,
               CAMERA.focusWidth,
               CAMERA.overviewWidth,
             );
 
+            /*
+             * The arc has to be on screen too.
+             *
+             * Framing the pair horizontally says nothing about how high the
+             * shot goes between them, and a lob over a ridge leaves its whole
+             * top half above the frame — so the player picks a round without
+             * ever seeing where it lands. Widening until the apex fits is the
+             * fix that keeps the existing framing intact: the camera pulls back
+             * rather than tilting off the fighters.
+             */
+            const floor = Math.min(fighter.position.y, target.position.y);
+            const ceiling = Math.max(
+              this.turn?.solution?.apex ?? floor,
+              fighter.position.y,
+              target.position.y,
+            );
+            const needed = ceiling - floor + CAMERA.arcMargin;
+            const covered = this.cameraRig.visibleHeightAt(wanted);
+            if (covered > 0.05 && covered < needed) {
+              wanted = THREE.MathUtils.clamp(
+                wanted * (needed / covered),
+                wanted,
+                CAMERA.overviewWidth,
+              );
+            }
+
             if (this.cameraRig.visibleWidthAt(wanted) >= span + CAMERA.engagementMargin * 0.4) {
               width = wanted;
               x = (fighter.position.x + target.position.x) / 2;
-              y = Math.max(fighter.position.y, target.position.y) + width * 0.1;
+              // Sit between the ground and the top of the arc rather than just
+              // above the fighters, so the extra height is spent on the shot.
+              y = floor + (ceiling - floor) * 0.52 + 1.5;
             } else {
               /*
                * Portrait cannot hold the pair. Rather than centre on a midpoint
@@ -1609,6 +1656,23 @@ export class Game {
         await prepareGeneratedAssets(ANIMALS.map((animal) => animal.id));
       },
       /*
+       * Force a cast and rebuild everything that shows it.
+       *
+       * The generated set now loads at boot, which left the check for "did the
+       * avatars actually swap" racing it — sometimes the before-snapshot was
+       * already the after. Driving both directions explicitly removes the race
+       * and tests the thing that broke: the roster DOM holding stale portraits.
+       */
+      setCast: async (kind: string) => {
+        setFighterModelSource(kind === 'generated' ? 'generated' : 'built');
+        if (kind === 'generated') {
+          await prepareGeneratedAssets(ANIMALS.map((animal) => animal.id));
+        }
+        this.showroom.refresh();
+        this.characterIcons.renderAll();
+        this.setupScreen.refreshAvatars();
+      },
+      /*
        * What the live fighters actually came out as.
        *
        * Every way of getting a skinned adaptation wrong is silent: a bone name
@@ -1626,6 +1690,31 @@ export class Game {
        * fighter alone silently captured eight frames of a model standing
        * still and looking like the rig had failed.
        */
+      /**
+       * The shot the player is looking at, and whether it fits the frame.
+       *
+       * The complaint this answers — the arc leaving the screen while you pick
+       * a round — is invisible to a screenshot of a seed that happened to be
+       * flat. Reporting the apex against the visible top makes it checkable
+       * across seeds instead of anecdotal.
+       */
+      inspectShot: () => {
+        const solution = this.turn?.solution ?? null;
+        if (!solution) return null;
+        // Read off the live camera rather than the mode default: the framing
+        // widens to fit the arc, so the mode width is not what is on screen.
+        const camera = this.cameraRig.camera;
+        const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.position.z;
+        const top = camera.position.y + halfHeight;
+        return {
+          angle: Number(solution.angle.toFixed(1)),
+          apex: Number(solution.apex.toFixed(2)),
+          quality: solution.quality,
+          missDistance: Number(solution.missDistance.toFixed(2)),
+          visibleTop: Number(top.toFixed(2)),
+          arcOnScreen: solution.apex <= top,
+        };
+      },
       /** Name of the model currently in the active hand, to prove which factory built it. */
       heldRoundName: () => this.activeFighter?.heldAmmoName ?? null,
       /** Picks a round, so a capture can show one that is not the default. */

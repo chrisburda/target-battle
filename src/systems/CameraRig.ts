@@ -78,6 +78,19 @@ export class CameraRig {
    * for 70 units across yields barely 28. Callers that need two things in
    * frame have to be able to find that out rather than silently losing one.
    */
+  /**
+   * Vertical extent the frame covers at a requested width.
+   *
+   * The counterpart to `visibleWidthAt`, and needed for the same reason: the
+   * distance solver clamps the visible height into a band, so height is not
+   * simply width over aspect and cannot be worked out by the caller.
+   */
+  visibleHeightAt(requestedWidth: number): number {
+    const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const distance = this.distanceFor(Math.min(requestedWidth, CAMERA.overviewWidth));
+    return 2 * distance * tan;
+  }
+
   visibleWidthAt(requestedWidth: number): number {
     const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
     const distance = this.distanceFor(Math.min(requestedWidth, CAMERA.overviewWidth));

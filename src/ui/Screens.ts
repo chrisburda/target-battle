@@ -208,8 +208,14 @@ export class SetupScreen {
 
   private showDetail(animalId: string): void {
     const animal = getAnimal(animalId);
+    /*
+     * Name without species: the species is printed directly under the portrait
+     * and again on every roster card, so repeating it here bought nothing and
+     * cost the twenty characters that pushed the longest lines onto a second
+     * row.
+     */
     this.animalDetail.innerHTML =
-      '<strong>' + animal.name + ' the ' + animal.species + '</strong> &mdash; ' + animal.perkLabel;
+      '<strong>' + animal.name + '</strong> &mdash; ' + animal.perkLabel;
     this.portraitName.textContent = animal.name;
     this.portraitSpecies.textContent = animal.species;
     this.onPreview?.(animal.id);
