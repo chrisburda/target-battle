@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { barkTexture, radialTexture, soilTexture, waterTexture } from './ProceduralTextures';
+import { FLORA, GROUND, WATER, hex } from './palette';
 
 /**
  * Named material roles shared across the whole game.
@@ -13,6 +14,8 @@ export class MaterialLibrary {
   private readonly fabricCache = new Map<number, THREE.MeshStandardMaterial>();
   private readonly leatherCache = new Map<number, THREE.MeshStandardMaterial>();
   private readonly flatCache = new Map<number, THREE.MeshStandardMaterial>();
+  private readonly foliageCache = new Map<number, THREE.MeshStandardMaterial>();
+  private readonly matteCache = new Map<number, THREE.MeshStandardMaterial>();
   private readonly owned: THREE.Material[] = [];
 
   /** Terrain slab. Vertex colours carry the strata; the map only adds grain. */
@@ -56,13 +59,21 @@ export class MaterialLibrary {
     // once per 8 world units at repeat 1 — anything smaller smears the grain.
     soil.repeat.set(1, 1);
 
+    /*
+     * Roughness and ambient are matched to the generated assets rather than
+     * picked: their metallicRoughness maps average 0.8-0.88 roughness at zero
+     * metalness. Terrain sat at 0.94 with a third of the ambient, which made
+     * it the one surface in frame with no sheen at all — the fighters caught a
+     * soft top light the ground they stood on did not, and that mismatch reads
+     * as a cutout even once the colours agree.
+     */
     this.terrain = this.own(
       new THREE.MeshStandardMaterial({
         vertexColors: true,
         map: soil,
-        roughness: 0.94,
+        roughness: 0.88,
         metalness: 0,
-        envMapIntensity: 0.35,
+        envMapIntensity: 0.5,
       }),
     );
 
@@ -79,7 +90,7 @@ export class MaterialLibrary {
     water.repeat.set(6, 2);
     this.water = this.own(
       new THREE.MeshStandardMaterial({
-        color: 0x2e9fd0,
+        color: hex(WATER.surface),
         map: water,
         transparent: true,
         opacity: 0.82,
@@ -93,47 +104,33 @@ export class MaterialLibrary {
     bark.repeat.set(1, 2);
     this.bark = this.own(
       new THREE.MeshStandardMaterial({
-        color: 0x8a6440,
+        color: hex(FLORA.bark),
         map: bark,
-        roughness: 0.88,
+        roughness: 0.86,
         metalness: 0,
-        envMapIntensity: 0.4,
+        envMapIntensity: 0.5,
       }),
     );
 
-    this.leaf = this.own(
-      new THREE.MeshStandardMaterial({
-        color: 0x3f9c3a,
-        roughness: 0.7,
-        metalness: 0,
-        side: THREE.DoubleSide,
-        envMapIntensity: 0.6,
-      }),
-    );
+    this.leaf = this.foliage(hex(FLORA.canopy));
+    this.leafDark = this.foliage(hex(FLORA.canopyShade), 0.42);
 
-    this.leafDark = this.own(
-      new THREE.MeshStandardMaterial({
-        color: 0x2a6f34,
-        roughness: 0.78,
-        metalness: 0,
-        side: THREE.DoubleSide,
-        envMapIntensity: 0.45,
-      }),
-    );
-
+    // Near-neutral, because the generated river rock measured 0.002 chroma:
+    // the old prop rock was a warm olive that quietly tinted every boulder in
+    // the arena away from the one the fighters actually throw.
     this.rock = this.own(
       new THREE.MeshStandardMaterial({
-        color: 0x8d8577,
-        roughness: 0.92,
+        color: hex(GROUND.rock.lit),
+        roughness: 0.9,
         metalness: 0.02,
         flatShading: true,
-        envMapIntensity: 0.5,
+        envMapIntensity: 0.55,
       }),
     );
 
     this.groundContact = this.own(
       new THREE.MeshBasicMaterial({
-        color: 0x1b2a17,
+        color: hex(GROUND.grass.shade),
         map: radialTexture(),
         transparent: true,
         opacity: 0.42,
@@ -269,6 +266,38 @@ export class MaterialLibrary {
     return material;
   }
 
+  /**
+   * Leaves, fronds and blades.
+   *
+   * Same trick as `hide`, for the same reason: a plain standard material gives
+   * foliage a hard terminator that reads as painted card, and a broad sheen
+   * lobe softens it into something with thickness. Foliage wants it more than
+   * hide does — real leaves are thin enough to scatter light through, and the
+   * sheen lobe is the cheapest thing that hints at it without a transmission
+   * pass. Double-sided, so a frond seen from behind is still a leaf.
+   */
+  foliage(color: number, sheen = 0.6): THREE.MeshStandardMaterial {
+    const hit = this.foliageCache.get(color);
+    if (hit) return hit;
+    const base = new THREE.Color().setHex(color, THREE.SRGBColorSpace);
+    const material = this.own(
+      new THREE.MeshPhysicalMaterial({
+        color,
+        roughness: 0.74,
+        metalness: 0,
+        side: THREE.DoubleSide,
+        sheen,
+        sheenRoughness: 0.62,
+        // Sheen tinted toward yellow-green rather than white: sunlight through
+        // a leaf comes out the colour of the leaf, not the colour of the sun.
+        sheenColor: base.clone().lerp(new THREE.Color(0xf2ffbe), 0.5),
+        envMapIntensity: 0.6,
+      }),
+    );
+    this.foliageCache.set(color, material);
+    return material;
+  }
+
   /** Costume fabric: rough, with a strong sheen for a cloth edge highlight. */
   fabric(color: number): THREE.MeshStandardMaterial {
     const hit = this.fabricCache.get(color);
@@ -304,6 +333,31 @@ export class MaterialLibrary {
     return material;
   }
 
+  /**
+   * Smooth-shaded prop material keyed by colour.
+   *
+   * The counterpart to `flat`, and the right default for anything that is
+   * round in life — a bamboo culm, a coconut, a cut log end. Faceting is a
+   * deliberate effect for broken stone; applied to a cylinder it just looks
+   * like a cylinder that was not smoothed, and beside a generated character
+   * with a continuous surface it is the loudest thing in frame.
+   */
+  matte(color: number, roughness = 0.78): THREE.MeshStandardMaterial {
+    const key = color * 100 + Math.round(roughness * 100) + 2;
+    const hit = this.matteCache.get(key);
+    if (hit) return hit;
+    const material = this.own(
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness,
+        metalness: 0,
+        envMapIntensity: 0.55,
+      }),
+    );
+    this.matteCache.set(key, material);
+    return material;
+  }
+
   /** Flat-shaded prop material keyed by colour (rocks, ammo, debris). */
   flat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
     const key = color * 100 + Math.round(roughness * 100) + 1;
@@ -333,6 +387,8 @@ export class MaterialLibrary {
     this.fabricCache.clear();
     this.leatherCache.clear();
     this.flatCache.clear();
+    this.foliageCache.clear();
+    this.matteCache.clear();
   }
 
   private own<T extends THREE.Material>(material: T): T {

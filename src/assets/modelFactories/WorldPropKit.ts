@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { MaterialLibrary } from '../MaterialLibrary';
+import { FLORA, hex } from '../palette';
 import type { Terrain } from '../../systems/Terrain';
 import { WORLD } from '../../game/config';
 
@@ -26,6 +27,17 @@ type Placement = {
   z: number;
   scale: number;
   rotation: number;
+  /**
+   * Per-instance brightness multiplier.
+   *
+   * Instanced props are one geometry and one material by construction, so
+   * every copy comes out identically lit. Along a ridge that produces a row of
+   * interchangeable beads — the eye reads the repetition before it reads the
+   * foliage. A per-instance multiplier costs one float3 in the instance buffer
+   * and breaks the pattern, and folding terrain openness into it also seats
+   * each prop in the light of the ground it stands on.
+   */
+  tint?: number;
 };
 
 type PropBatch = {
@@ -184,6 +196,15 @@ export class WorldPropKit {
     this.populate();
   }
 
+  /**
+   * Brightness for one instance: some spread, plus the sky exposure of the
+   * ground beneath it, so a bush down a gully is not lit like a ridge top.
+   */
+  private tintAt(x: number): number {
+    const openness = this.terrain.opennessAt(x);
+    return (0.86 + this.random() * 0.26) * (0.74 + 0.26 * openness);
+  }
+
   private skipped(key: string): boolean {
     return this.options.skip?.includes(key) ?? false;
   }
@@ -192,7 +213,7 @@ export class WorldPropKit {
     this.leafSway = makeSwayMaterial(this.materials.leaf, 0.03, 'leaf');
     this.leafDarkSway = makeSwayMaterial(this.materials.leafDark, 0.024, 'leafDark');
     this.grassSway = makeSwayMaterial(this.materials.leaf, 0.075, 'grass');
-    this.grassSway.color.setHex(0x66b83a);
+    this.grassSway.color.setHex(hex(FLORA.blade));
     this.swayMaterials.push(this.leafSway, this.leafDarkSway, this.grassSway);
     this.ownedMaterials.push(...this.swayMaterials);
   }
@@ -282,7 +303,7 @@ export class WorldPropKit {
       const angle = (i / 3) * Math.PI * 2;
       parts.push({
         geometry: place(nut, [crown[0] + Math.cos(angle) * 0.3, crown[1] - 0.35, Math.sin(angle) * 0.3], [0, 0, 0]),
-        material: this.materials.flat(0x6d4423, 0.85),
+        material: this.materials.matte(hex(FLORA.husk), 0.8),
       });
     }
     return { parts };
@@ -290,8 +311,8 @@ export class WorldPropKit {
 
   private bamboo(): PropTemplate {
     const parts: Part[] = [];
-    const stalkMaterial = this.materials.flat(0x84a83c, 0.7);
-    const nodeMaterial = this.materials.flat(0x62842c, 0.75);
+    const stalkMaterial = this.materials.matte(hex(FLORA.bamboo), 0.66);
+    const nodeMaterial = this.materials.matte(hex(FLORA.bambooNode), 0.7);
     for (let s = 0; s < 4; s += 1) {
       const height = 3.4 + this.random() * 2.4;
       const stalk = new THREE.CylinderGeometry(0.085, 0.1, height, 7, 1);
@@ -353,14 +374,14 @@ export class WorldPropKit {
     this.ownedGeometries.push(body, cap, shroom);
     const parts: Part[] = [
       { geometry: place(body, [0, 0.4, 0], [0, 0, Math.PI / 2]), material: this.materials.bark },
-      { geometry: place(cap, [1.4, 0.4, 0], [0, Math.PI / 2, 0]), material: this.materials.flat(0xc2a171, 0.85) },
-      { geometry: place(cap, [-1.4, 0.4, 0], [0, -Math.PI / 2, 0]), material: this.materials.flat(0xc2a171, 0.85) },
+      { geometry: place(cap, [1.4, 0.4, 0], [0, Math.PI / 2, 0]), material: this.materials.matte(hex(FLORA.barkPale), 0.82) },
+      { geometry: place(cap, [-1.4, 0.4, 0], [0, -Math.PI / 2, 0]), material: this.materials.matte(hex(FLORA.barkPale), 0.82) },
       { geometry: place(body, [0, 0.72, 0], [0, 0, Math.PI / 2], [0.9, 0.55, 0.4]), material: this.materials.leafDark },
     ];
     for (let i = 0; i < 3; i += 1) {
       parts.push({
         geometry: place(shroom, [(i - 1) * 0.7, 0.74, 0.28], [0, 0, 0], 0.8 + this.random() * 0.5),
-        material: this.materials.flat(0xe0a35a, 0.7),
+        material: this.materials.matte(hex(FLORA.bracket), 0.68),
       });
     }
     return { parts };
@@ -372,7 +393,7 @@ export class WorldPropKit {
     const cap = new THREE.SphereGeometry(0.26, 9, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     const spot = new THREE.CircleGeometry(0.05, 6);
     this.ownedGeometries.push(stem, cap, spot);
-    const capMaterial = this.materials.flat(0xd8483c, 0.6);
+    const capMaterial = this.materials.matte(hex(FLORA.fungusCap), 0.62);
     for (let i = 0; i < 3; i += 1) {
       const x = (i - 1) * 0.34;
       const s = 0.7 + this.random() * 0.6;
@@ -400,7 +421,7 @@ export class WorldPropKit {
     const petal = new THREE.SphereGeometry(0.11, 7, 5);
     const core = new THREE.SphereGeometry(0.07, 7, 5);
     this.ownedGeometries.push(stem, petal, core);
-    const petalMaterial = this.materials.flat(0xf25f9c, 0.55);
+    const petalMaterial = this.materials.matte(hex(FLORA.blossom), 0.6);
     parts.push({ geometry: place(stem, [0, 0.35, 0], [0, 0, 0]), material: this.leafDarkSway });
     for (let i = 0; i < 5; i += 1) {
       const a = (i / 5) * Math.PI * 2;
@@ -423,7 +444,7 @@ export class WorldPropKit {
     ]);
     const rope = new THREE.TubeGeometry(curve, 12, 0.05, 5, false);
     this.ownedGeometries.push(rope);
-    parts.push({ geometry: rope, material: this.materials.flat(0x54702e, 0.85) });
+    parts.push({ geometry: rope, material: this.materials.flat(hex(FLORA.canopyShade), 0.85) });
 
     const leaf = bladeGeometry(0.5, 0.13, 0.2, 3);
     this.ownedGeometries.push(leaf);
@@ -445,7 +466,7 @@ export class WorldPropKit {
     const parts: Part[] = [];
     const blob = new THREE.SphereGeometry(1, 9, 7);
     this.ownedGeometries.push(blob);
-    const dark = this.materials.flat(0x1f5228, 0.9);
+    const dark = this.materials.foliage(hex(FLORA.canopyShade), 0.34);
     const offsets: Array<[number, number, number, number]> = [
       [0, 0.5, 0, 0.9],
       [0.75, 0.36, 0.1, 0.66],
@@ -467,6 +488,34 @@ export class WorldPropKit {
     return { parts };
   }
 
+  /**
+   * A cluster of stone half-buried in the cliff face.
+   *
+   * Flattened on z on purpose: these sit in the wall, not on it, and a round
+   * boulder pushed into a surface reads as a ball stuck to a wall. Squashing
+   * the depth and letting the face swallow the back half is what makes it read
+   * as something the ground was built around.
+   */
+  private cliffRock(): PropTemplate {
+    const parts: Part[] = [];
+    const main = jitteredRock(1, 21, 1);
+    const chip = jitteredRock(0.44, 47, 0);
+    this.ownedGeometries.push(main, chip);
+    parts.push({
+      geometry: place(main, [0, 0, 0], [0.3, 0.9, 0.2], [1.15, 0.86, 0.55]),
+      material: this.materials.rock,
+    });
+    parts.push({
+      geometry: place(chip, [0.86, -0.44, 0.18], [1.1, 0.4, 0.7], [1, 0.8, 0.5]),
+      material: this.materials.rock,
+    });
+    parts.push({
+      geometry: place(chip, [-0.74, 0.38, 0.1], [0.4, 1.9, 0.2], [0.82, 0.7, 0.45]),
+      material: this.materials.rock,
+    });
+    return { parts };
+  }
+
   // ------------------------------------------------------------- placement
 
   private populate(): void {
@@ -478,8 +527,87 @@ export class WorldPropKit {
     this.spawn('palm', () => this.palm(), 12, { minScale: 1.3, maxScale: 2.05, zRange: [-3.8, 2.4], maxSlope: 0.55 });
     this.spawn('bamboo', () => this.bamboo(), 13, { minScale: 1.15, maxScale: 1.85, zRange: [-3.8, 2.8], maxSlope: 0.6 });
     this.spawn('log', () => this.log(), 10, { minScale: 1.1, maxScale: 1.8, zRange: [-3.4, 3.2], maxSlope: 0.34 });
-    this.spawn('bush', () => this.frontBush(), 32, { minScale: 1.1, maxScale: 2.3, zRange: [3.6, 4.4] });
+    // Scaled down from a 2.3 ceiling: at that size a single blob stood taller
+    // than a fighter, and the cluster read as a heap of boulders painted green
+    // rather than as undergrowth.
+    this.spawn('bush', () => this.frontBush(), 40, { minScale: 0.8, maxScale: 1.45, zRange: [3.6, 4.4] });
     this.spawnVines(14);
+    this.spawnCliffRocks(24);
+  }
+
+  /**
+   * Stone outcrops down the cliff face.
+   *
+   * The face is the largest single surface in frame and, textured alone, it
+   * stays one unbroken sweep of brown — no amount of albedo detail survives
+   * being minified across sixty world units. Outcrops give it the interruption
+   * the eye is looking for, and they are the same near-neutral stone as the
+   * river rock the fighters throw, so the arena and the ammo agree about what
+   * rock looks like here.
+   *
+   * Placed by depth below the surface rather than by height, so they follow
+   * the topography down instead of banding at one altitude.
+   */
+  private spawnCliffRocks(count: number): void {
+    if (this.skipped('cliffRock')) return;
+    const built = this.cliffRock();
+    const byMaterial = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    for (const part of built.parts) {
+      const list = byMaterial.get(part.material) ?? [];
+      list.push(part.geometry);
+      byMaterial.set(part.material, list);
+    }
+
+    /*
+     * Placed in clusters rather than independently.
+     *
+     * Uniform scatter at this count reads as gravel sprayed across the wall —
+     * every rock equally spaced, none of them related to any other. Stone
+     * comes out of the ground in seams, so a few sites with two or three
+     * outcrops each is both truer and much stronger compositionally: it leaves
+     * clean face between the groups instead of an even speckle over all of it.
+     */
+    const placements: Placement[] = [];
+    const wanted = Math.max(1, Math.round(count * this.options.density));
+    let guard = 0;
+    while (placements.length < wanted && guard < wanted * 30) {
+      guard += 1;
+      const seedX = (this.random() * 2 - 1) * (WORLD.halfWidth - 4);
+      const seedHeight = this.terrain.heightAt(seedX);
+      // Needs enough face beneath it to sit in; a thin lip has nowhere to
+      // embed a rock without it poking out of both sides.
+      if (seedHeight - WORLD.waterY < 8) continue;
+      const seedBelow = 3 + this.random() * Math.min(12, seedHeight - WORLD.waterY - 5);
+
+      const members = 2 + Math.floor(this.random() * 2);
+      for (let m = 0; m < members && placements.length < wanted; m += 1) {
+        const x = seedX + (this.random() * 2 - 1) * 3.4;
+        const height = this.terrain.heightAt(x);
+        const scale = 1.1 + this.random() * 2.3;
+        // Deep enough that the rock cannot breach the turf above it. Sizing
+        // and depth were independent at first, and the big ones surfaced
+        // through the grass and read as boulders balanced on the skyline.
+        const below = Math.max(seedBelow + (this.random() * 2 - 1) * 2.2, scale * 1.45);
+        const y = height - below;
+        if (y < WORLD.waterY + 0.5) continue;
+        // A crest falls away to both sides, so a rock embedded against the
+        // centre column can still hang in mid-air a metre either way.
+        if (y > this.terrain.heightAt(x - scale) - 1.1) continue;
+        if (y > this.terrain.heightAt(x + scale) - 1.1) continue;
+        placements.push({
+          x,
+          y,
+          // Sunk back so roughly the front half stands proud of the wall.
+          z: this.terrain.faceZAt(x, y) - 0.5,
+          scale,
+          rotation: this.random() * Math.PI * 2,
+          // Stone in the wall reads by value, not by hue, so it takes a wider
+          // spread than foliage does.
+          tint: 0.78 + this.random() * 0.34,
+        });
+      }
+    }
+    this.commit('cliffRock', byMaterial, placements);
   }
 
   private spawn(
@@ -513,6 +641,7 @@ export class WorldPropKit {
         z: options.zRange[0] + this.random() * (options.zRange[1] - options.zRange[0]),
         scale: options.minScale + this.random() * (options.maxScale - options.minScale),
         rotation: this.random() * Math.PI * 2,
+        tint: this.tintAt(x),
       });
     }
 
@@ -544,6 +673,7 @@ export class WorldPropKit {
         z: 3.2 + this.random() * 1.2,
         scale: 1.1 + this.random() * 1.1,
         rotation: this.random() * 0.6 - 0.3,
+        tint: this.tintAt(x),
       });
     }
     this.commit('vine', byMaterial, placements);
@@ -583,6 +713,14 @@ export class WorldPropKit {
         mesh.setMatrixAt(index, matrix);
       });
       mesh.instanceMatrix.needsUpdate = true;
+      if (placements.some((placement) => placement.tint !== undefined)) {
+        const tint = new THREE.Color();
+        placements.forEach((placement, index) => {
+          const value = placement.tint ?? 1;
+          mesh.setColorAt(index, tint.setRGB(value, value, value));
+        });
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
       mesh.computeBoundingSphere();
       this.group.add(mesh);
       meshes.push(mesh);
@@ -597,7 +735,10 @@ export class WorldPropKit {
     }
 
     this.batches.set(key, { meshes, placements, alive: placements.map(() => true) });
-    this.groundHeights.set(key, placements.map((p) => p.y));
+    // Terrain height at plant time, not the prop's own y: cliff rocks are
+    // embedded well below the surface, and storing their own height would make
+    // every one of them look displaced the first time anything was carved.
+    this.groundHeights.set(key, placements.map((p) => this.terrain.heightAt(p.x)));
   }
 
   /**
@@ -613,6 +754,9 @@ export class WorldPropKit {
     const tall = new Set(['palm', 'bamboo', 'log', 'boulder', 'bush', 'vine']);
     const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
     for (const [key, batch] of this.batches) {
+      // Cliff rocks live in the wall below the standing surface, so they never
+      // stand between the camera and a fighter and never need clearing.
+      if (key === 'cliffRock') continue;
       const radius = tall.has(key) ? tallRadius : groundRadius;
       let changed = false;
       for (let i = 0; i < batch.placements.length; i += 1) {

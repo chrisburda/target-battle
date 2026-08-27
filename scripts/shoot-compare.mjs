@@ -1,0 +1,14 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1500, height: 800 }, deviceScaleFactor: 2 });
+const msgs = [];
+p.on('pageerror', (e) => msgs.push('PAGEERR ' + e.message));
+p.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') msgs.push(m.type() + ': ' + m.text().slice(0,120)); });
+await p.goto('http://127.0.0.1:5188/compare.html', { waitUntil: 'load' });
+await p.waitForTimeout(12000);
+console.log('progress:', await p.evaluate(() => document.querySelector('#progress')?.textContent));
+console.log('stats:', await p.evaluate(() => [...document.querySelectorAll('.stat')].map(s => s.textContent)));
+console.log('webgl contexts ok:', await p.evaluate(() => [...document.querySelectorAll('canvas')].map(c => !!c.getContext('webgl2') || !!c.getContext('webgl')).filter(Boolean).length));
+await p.screenshot({ path: 'artifacts/characters/comparison.png', fullPage: true });
+console.log(msgs.length ? 'MSGS: ' + msgs.slice(0,6).join(' || ') : 'clean');
+await b.close();

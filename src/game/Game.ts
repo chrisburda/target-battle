@@ -87,6 +87,16 @@ export class Game {
   private readonly shake = new ShakeRig();
 
   private rng = createSeededRandom(20260826);
+  /**
+   * Scenery's own random stream, forked from the same seed.
+   *
+   * Decoration must not draw from `rng`. Every scatter call advances it, so
+   * adding one family of props silently re-rolls spawn points, wind and every
+   * AI decision for the rest of the match — a seed stops meaning what it meant,
+   * and no two builds can be compared frame to frame. Splitting the stream
+   * keeps the arena reproducible while the dressing on it is free to change.
+   */
+  private decorRng = createSeededRandom(20260826 ^ 0x9e3779b9);
   private readonly audio: AudioSystem;
   private readonly vfx: VfxSystem;
   private terrain!: Terrain;
@@ -218,7 +228,7 @@ export class Game {
     this.terrain = new Terrain(this.materials, { seed: this.seed, hills: 4 });
     this.worldRoot.add(this.terrain.group);
 
-    this.environment = new Environment(this.materials, () => this.rng());
+    this.environment = new Environment(this.materials, () => this.decorRng());
     this.worldRoot.add(this.environment.group);
 
     this.lighting = new LightingRig(this.environment.sunDir);
@@ -226,7 +236,7 @@ export class Game {
     this.lighting.attachEnvironment(this.pipeline.renderer, this.scene);
     this.lighting.setShadowQuality(this.pipeline.qualityTier === 'mobile' ? 1024 : 2048);
 
-    this.props = new WorldPropKit(this.materials, this.terrain, () => this.rng(), this.propOptions);
+    this.props = new WorldPropKit(this.materials, this.terrain, () => this.decorRng(), this.propOptions);
     this.worldRoot.add(this.props.group);
 
     this.vfx.clear();
@@ -251,9 +261,9 @@ export class Game {
 
     this.terrain = new Terrain(this.materials, { seed: this.seed, hills: 3 + Math.floor(this.rng() * 3) });
     this.worldRoot.add(this.terrain.group);
-    this.environment = new Environment(this.materials, () => this.rng());
+    this.environment = new Environment(this.materials, () => this.decorRng());
     this.worldRoot.add(this.environment.group);
-    this.props = new WorldPropKit(this.materials, this.terrain, () => this.rng(), this.propOptions);
+    this.props = new WorldPropKit(this.materials, this.terrain, () => this.decorRng(), this.propOptions);
     this.worldRoot.add(this.props.group);
 
     // The aim guide and projectile pool only needed the new heightfield. They
@@ -347,6 +357,7 @@ export class Game {
     if (newTerrain) {
       this.seed = Math.floor(this.rng() * 1_000_000) + 1;
       this.rng = createSeededRandom(this.seed);
+      this.decorRng = createSeededRandom(this.seed ^ 0x9e3779b9);
       this.rebuildWorld();
     }
 
@@ -1532,6 +1543,7 @@ export class Game {
       seed: (value: number) => {
         this.seed = value;
         this.rng = createSeededRandom(value);
+        this.decorRng = createSeededRandom(value ^ 0x9e3779b9);
       },
       setState: (name: string) => {
         this.cameraOverride = null;

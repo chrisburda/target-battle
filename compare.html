@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asset comparison</title>
+    <style>
+      :root {
+        --surface: #1d1d1d;
+        --hairline: rgba(224, 224, 224, 0.16);
+        --text: #fafafa;
+        --muted: #b6b6b6;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #14181d; color: var(--text);
+             font-family: 'proxima-nova', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      header { padding: 20px 24px 4px; }
+      h1 { margin: 0 0 4px; font-size: 24px; font-weight: 800; letter-spacing: .04rem; }
+      .sub { margin: 0; color: var(--muted); font-size: 14px; max-width: 90ch; }
+      .legend { margin: 12px 0 0; display: flex; gap: 18px; font-size: 12px;
+                letter-spacing: .08rem; text-transform: uppercase; color: var(--muted); }
+      .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+                margin-right: 6px; vertical-align: middle; }
+      h3.section { margin: 22px 24px 0; font-size: 12px; letter-spacing: .12rem;
+                   text-transform: uppercase; color: var(--muted); }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+              gap: 14px; padding: 12px 24px 24px; }
+      .card { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); overflow: hidden; }
+      .card h2 { margin: 0; padding: 9px 13px; font-size: 15px; border-bottom: 1px solid var(--hairline);
+                 display: flex; justify-content: space-between; align-items: baseline; }
+      .card h2 span { font-size: 11px; letter-spacing: .1rem; text-transform: uppercase; color: var(--muted); }
+      .stage { display: grid; grid-template-columns: 1fr 1fr; }
+      .pane { position: relative; aspect-ratio: 3 / 4; background: #23282e; }
+      .pane + .pane { border-left: 1px solid var(--hairline); }
+      .pane canvas { display: block; width: 100%; height: 100%; }
+      .tag { position: absolute; left: 7px; top: 7px; font-size: 10px; letter-spacing: .1rem;
+             text-transform: uppercase; padding: 2px 6px; border-radius: 2px; background: rgba(0,0,0,.6); }
+      .tag--tripo { color: #7acd59; }
+      .tag--proc { color: #51bef1; }
+      .pending { position: absolute; inset: 0; display: grid; place-items: center;
+                 color: var(--muted); font-size: 12px; text-align: center; padding: 12px; }
+      .stat { padding: 7px 13px; font-size: 11px; color: var(--muted);
+              border-top: 1px solid var(--hairline); font-family: Monaco, Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Asset comparison</h1>
+      <p class="sub">
+        Generated Tripo assets against the procedural ones they would replace. Both sides are
+        live 3D under identical lighting, normalised to the same height so silhouettes compare
+        fairly. Refresh as more generations land.
+      </p>
+      <p class="legend">
+        <span><i class="swatch" style="background:#7acd59"></i>Tripo</span>
+        <span><i class="swatch" style="background:#51bef1"></i>Procedural</span>
+        <span id="progress"></span>
+      </p>
+    </header>
+    <div id="sections"></div>
+
+    <script type="module">
+      /*
+       * Dev-only comparison harness. Not in the game build — Vite bundles only
+       * index.html — but it imports the real factories, so the procedural side
+       * is exactly what the game renders rather than a stand-in.
+       *
+       * ONE WebGLRenderer, blitted into a 2D canvas per pane. The obvious
+       * approach — a renderer per pane — dies at about ten live contexts: the
+       * browser evicts the oldest and those panes silently go black.
+       */
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+      import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+      import { MaterialLibrary } from '/src/assets/MaterialLibrary.ts';
+      import { createFighterModel } from '/src/assets/modelFactories/AnimalFactory.ts';
+      import { createAmmoModel } from '/src/assets/modelFactories/AmmoFactory.ts';
+      import { ANIMALS, AMMO } from '/src/game/roster.ts';
+
+      const PANE = 340;
+      const TARGET_HEIGHT = 3.9;
+      const materials = new MaterialLibrary();
+
+      // --- the single renderer everything is drawn through ---------------
+      const gl = document.createElement('canvas');
+      gl.width = PANE;
+      gl.height = Math.round(PANE * 4 / 3);
+      const renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true, alpha: true });
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.86;
+      renderer.setClearColor(0x23282e, 1);
+
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+
+      const camera = new THREE.PerspectiveCamera(32, gl.width / gl.height, 0.05, 60);
+      camera.position.set(0.55, 2.3, 8.2);
+      camera.lookAt(0, 1.95, 0);
+
+      /** A scene per pane, sharing one env map and one light rig layout. */
+      function makeScene() {
+        const scene = new THREE.Scene();
+        scene.environment = envMap;
+        scene.environmentIntensity = 0.32;
+        const key = new THREE.DirectionalLight(0xfff2da, 1.85);
+        key.position.set(-2.4, 3.4, 4.2);
+        scene.add(key);
+        scene.add(new THREE.HemisphereLight(0xdfeeff, 0x2b3340, 0.62));
+        const rim = new THREE.DirectionalLight(0xbcd9ff, 1.05);
+        rim.position.set(2.6, 2.2, -3.4);
+        scene.add(rim);
+        const pivot = new THREE.Group();
+        scene.add(pivot);
+        return { scene, pivot };
+      }
+
+      function normalise(object, targetHeight = TARGET_HEIGHT) {
+        const box = new THREE.Box3().setFromObject(object);
+        const size = box.getSize(new THREE.Vector3());
+        const centre = box.getCenter(new THREE.Vector3());
+        const scale = targetHeight / Math.max(size.y, 0.001);
+        object.scale.multiplyScalar(scale);
+        object.position.sub(centre.multiplyScalar(scale));
+        object.position.y += targetHeight / 2;
+      }
+
+      function countTris(object) {
+        let tris = 0;
+        object.traverse((o) => {
+          if (!o.isMesh) return;
+          const index = o.geometry.getIndex();
+          tris += index ? index.count / 3 : o.geometry.getAttribute('position').count / 3;
+        });
+        return Math.round(tris);
+      }
+
+      const panes = [];
+      let generated = 0;
+      let expected = 0;
+
+      function addCard(section, title, subtitle) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML =
+          `<h2>${title}<span>${subtitle}</span></h2>
+           <div class="stage">
+             <div class="pane"><canvas></canvas><div class="tag tag--tripo">Tripo</div></div>
+             <div class="pane"><canvas></canvas><div class="tag tag--proc">Procedural</div></div>
+           </div>
+           <div class="stat">loading…</div>`;
+        section.append(card);
+        return card;
+      }
+
+      function registerPane(canvas, built) {
+        canvas.width = gl.width;
+        canvas.height = gl.height;
+        panes.push({ ctx: canvas.getContext('2d'), ...built });
+      }
+
+      function buildSection(name, items) {
+        const heading = document.createElement('h3');
+        heading.className = 'section';
+        heading.textContent = name;
+        document.querySelector('#sections').append(heading);
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+        document.querySelector('#sections').append(grid);
+
+        for (const item of items) {
+          expected += 1;
+          const card = addCard(grid, item.title, item.subtitle);
+          const [tripoCanvas, procCanvas] = card.querySelectorAll('canvas');
+          const stat = card.querySelector('.stat');
+
+          const proc = makeScene();
+          const procRoot = item.procedural();
+          procRoot.rotation.y = -0.62;
+          proc.pivot.add(procRoot);
+          normalise(procRoot);
+          const procTris = countTris(procRoot);
+          registerPane(procCanvas, proc);
+
+          const tripo = makeScene();
+          registerPane(tripoCanvas, tripo);
+          new GLTFLoader().load(
+            item.glb,
+            (gltf) => {
+              gltf.scene.rotation.y = -0.62;
+              tripo.pivot.add(gltf.scene);
+              normalise(gltf.scene);
+              stat.textContent =
+                `tripo ${countTris(gltf.scene).toLocaleString()} tris   ·   procedural ${procTris.toLocaleString()} tris`;
+              generated += 1;
+              document.querySelector('#progress').textContent = `${generated} of ${expected} generated`;
+            },
+            undefined,
+            () => {
+              const pending = document.createElement('div');
+              pending.className = 'pending';
+              pending.textContent = 'not generated yet';
+              tripoCanvas.parentElement.append(pending);
+              stat.textContent = `procedural ${procTris.toLocaleString()} tris`;
+            },
+          );
+        }
+      }
+
+      const FIGHTER_FILE = {
+        gecko: 'pip', frog: 'bruno', boar: 'tusk',
+        raccoon: 'sly', tortoise: 'bunker', toucan: 'zip',
+      };
+
+      buildSection(
+        'Fighters',
+        ANIMALS.map((animal) => ({
+          title: animal.name,
+          subtitle: animal.species,
+          glb: `/tripo/${FIGHTER_FILE[animal.id]}.glb`,
+          procedural: () => createFighterModel(materials, animal).root,
+        })),
+      );
+
+      buildSection(
+        'Ammo',
+        AMMO.map((ammo) => ({
+          title: ammo.name,
+          subtitle: ammo.id,
+          glb: `/tripo/ammo-${ammo.id}.glb`,
+          procedural: () => createAmmoModel(materials, ammo).root,
+        })),
+      );
+
+      let t = 0;
+      function frame() {
+        t += 0.016;
+        // Sway rather than spin: a turntable hides the face half the time.
+        const sway = Math.sin(t * 0.55) * 0.55;
+        for (const pane of panes) {
+          pane.pivot.rotation.y = sway;
+          renderer.render(pane.scene, camera);
+          pane.ctx.clearRect(0, 0, gl.width, gl.height);
+          pane.ctx.drawImage(gl, 0, 0);
+        }
+        requestAnimationFrame(frame);
+      }
+      frame();
+    </script>
+  </body>
+</html>

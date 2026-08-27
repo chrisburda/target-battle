@@ -4,3 +4,16 @@ test-results/
 artifacts/
 *.log
 .DS_Store
+
+# Generated 3D assets.
+#
+# assets/tripo holds the source of record and is committed: generation is not
+# deterministic, so a lost GLB cannot be re-made from its prompt.
+#
+# public/tripo is the serving copy the dev comparison harness reads, and Vite
+# copies everything in public/ into the build. The game does not load these
+# yet, so committing it would put 26 MB of unused payload in front of every
+# visitor. Recreate it with: cp assets/tripo/*.glb public/tripo/
+assets/tripo/*.task.json
+assets/tripo/*.rejected
+public/tripo/

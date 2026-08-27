@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WORLD } from '../game/config';
 import { cloudTexture } from '../assets/ProceduralTextures';
+import { FLORA, SKY, aerial, hex } from '../assets/palette';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 
 /**
@@ -24,8 +25,20 @@ type RidgeLayer = {
   mesh: THREE.Mesh;
 };
 
-const SKY_TOP = new THREE.Color(0x2f7fc4);
-const SKY_HORIZON = new THREE.Color(0xd8ecf6);
+const SKY_TOP = SKY.top;
+const SKY_HORIZON = SKY.horizon;
+
+/**
+ * How far back each ridge layer sits, as a 0..1 recession amount.
+ *
+ * The colours are not authored. Every layer is the near canopy green walked
+ * toward the horizon by `aerial()`, which is the whole of aerial perspective
+ * and is the only way four layers stay in one family as the palette moves.
+ * Hand-picking them is how the previous kit ended up with a teal third ridge
+ * that matched nothing else in the frame — it had drifted 40° of hue away from
+ * the layer in front of it because each was chosen on its own.
+ */
+const RIDGE_RECESSION = [0.3, 0.52, 0.72, 0.9];
 
 export class Environment {
   readonly group = new THREE.Group();
@@ -50,17 +63,18 @@ export class Environment {
 
     // Four ridge layers, each paler and less contrasty than the one in front.
     const layerSpecs: Array<Omit<RidgeLayer, 'mesh'>> = [
-      { z: -46, color: 0x2f6b39, amplitude: 12, base: 4, frequency: 0.031, drift: 0.06 },
-      { z: -104, color: 0x4a8a63, amplitude: 17, base: 2, frequency: 0.021, drift: 0.13 },
-      { z: -186, color: 0x7fa8a5, amplitude: 24, base: -2, frequency: 0.014, drift: 0.22 },
-      { z: -290, color: 0xa8c4d6, amplitude: 32, base: -8, frequency: 0.0096, drift: 0.32 },
-    ];
+      { z: -46, amplitude: 12, base: 4, frequency: 0.031, drift: 0.06 },
+      { z: -104, amplitude: 17, base: 2, frequency: 0.021, drift: 0.13 },
+      { z: -186, amplitude: 24, base: -2, frequency: 0.014, drift: 0.22 },
+      { z: -290, amplitude: 32, base: -8, frequency: 0.0096, drift: 0.32 },
+    ].map((spec, i) => ({ ...spec, color: hex(aerial(FLORA.canopy, RIDGE_RECESSION[i])) }));
     for (const spec of layerSpecs) this.createRidge(spec);
 
     this.cloudMaterial = new THREE.MeshBasicMaterial({
       map: cloudTexture(),
+      color: SKY.cloud.clone(),
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.82,
       depthWrite: false,
       toneMapped: false,
     });
@@ -82,7 +96,7 @@ export class Environment {
       uniforms: {
         uTop: { value: SKY_TOP.clone() },
         uHorizon: { value: SKY_HORIZON.clone() },
-        uSunColor: { value: new THREE.Color(0xfff4d6) },
+        uSunColor: { value: SKY.sun.clone() },
         uSunDir: { value: this.sunDirection.clone() },
       },
       vertexShader: [

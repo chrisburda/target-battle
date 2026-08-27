@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Landscape regrade</title>
+    <style>
+      :root {
+        --surface: #1d1d1d;
+        --hairline: rgba(224, 224, 224, 0.16);
+        --text: #fafafa;
+        --muted: #b6b6b6;
+        --tripo: #7acd59;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #14181d; color: var(--text);
+             font-family: 'proxima-nova', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      header { padding: 22px 24px 6px; }
+      h1 { margin: 0 0 6px; font-size: 26px; font-weight: 800; letter-spacing: .04rem; }
+      .sub { margin: 0; color: var(--muted); font-size: 14px; max-width: 92ch; line-height: 1.5; }
+      h3.section { margin: 26px 24px 2px; font-size: 12px; letter-spacing: .12rem;
+                   text-transform: uppercase; color: var(--muted); }
+      .hint { margin: 0 24px; color: #838383; font-size: 12px; }
+
+      .pairs { padding: 12px 24px 8px; display: grid; gap: 16px; }
+      .pair { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface);
+              overflow: hidden; }
+      .pair h2 { margin: 0; padding: 10px 14px; font-size: 15px;
+                 border-bottom: 1px solid var(--hairline); }
+      .pair h2 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 10px; }
+      /* Drag-to-reveal: the two frames are identical except for the work, so a
+         wipe shows the difference far better than two images side by side. */
+      .wipe { position: relative; user-select: none; cursor: ew-resize; line-height: 0; }
+      .wipe img { display: block; width: 100%; }
+      .wipe .after { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }
+      .wipe .handle { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
+                      background: var(--tripo); pointer-events: none; }
+      .wipe .handle::after { content: ''; position: absolute; top: 50%; left: 50%;
+                             width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+                             background: var(--tripo); box-shadow: 0 2px 8px rgba(0,25,50,.4); }
+      .tagline { position: absolute; top: 10px; font-size: 10px; letter-spacing: .1rem;
+                 text-transform: uppercase; padding: 3px 7px; border-radius: 2px;
+                 background: rgba(0,0,0,.62); pointer-events: none; }
+      .tagline.l { left: 10px; color: #b6b6b6; }
+      .tagline.r { right: 10px; color: var(--tripo); }
+
+      table { border-collapse: collapse; width: calc(100% - 48px); margin: 10px 24px 8px;
+              font-size: 13px; }
+      th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--hairline); }
+      th { font-size: 11px; letter-spacing: .1rem; text-transform: uppercase; color: var(--muted);
+           font-weight: 700; }
+      td.num { font-family: Monaco, Menlo, monospace; font-size: 12px; }
+      .chip { display: inline-block; width: 34px; height: 14px; border-radius: 2px;
+              vertical-align: middle; margin-right: 8px; border: 1px solid rgba(255,255,255,.14); }
+      .bad { color: #ff8449; }
+      .ok { color: var(--tripo); }
+      footer { padding: 8px 24px 40px; color: #838383; font-size: 12px; max-width: 92ch;
+               line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Landscape regrade</h1>
+      <p class="sub">
+        The landscape rebuilt to sit with the generated characters. Colour is not eyeballed:
+        every albedo map in the generated set was decoded and k-means clustered in OKLab
+        (<code>scripts/tripo-palette.mjs</code>), and the landscape palette is derived from those
+        cluster centres. Drag any frame to wipe between before and after. Same seed, same
+        camera, same lighting — only the terrain, materials and palette changed.
+      </p>
+    </header>
+
+    <h3 class="section">Frames</h3>
+    <p class="hint">Drag left/right across an image.</p>
+    <div class="pairs" id="pairs"></div>
+
+    <h3 class="section">What the measurement said</h3>
+    <table>
+      <thead>
+        <tr><th>Surface</th><th>Before</th><th>Generated assets measured</th><th>After</th><th>The gap</th></tr>
+      </thead>
+      <tbody id="palette"></tbody>
+    </table>
+
+    <footer>
+      Hue was the real mismatch, not saturation. The old greens sat at OKLab hue 135–147 — a cold,
+      blue-leaning green — while every generated asset with foliage on it clustered at 107–129.
+      The old earth ran 62–74 against a measured 37–71. Chroma only overshot on four of nineteen
+      colours, so grading saturation alone would never have closed it.
+      <br /><br />
+      The terrain stays a fully destructible heightfield. Nothing here is baked: occlusion is
+      computed from the heights and recomputed on every carve, so a fresh crater shades its own
+      bowl.
+    </footer>
+
+    <script type="module">
+      const FRAMES = [
+        ['desktop-05-impact', 'Close play', 'the framing most of a turn is spent in'],
+        ['desktop-02-aim', 'Target select', 'wide enough to show both fighters and the ridge'],
+        ['desktop-04-flight', 'Shot in flight', 'camera leading the projectile'],
+        ['desktop-03-interval', 'Power interval', 'the frame the player stares at while tapping'],
+      ];
+
+      const pairs = document.querySelector('#pairs');
+      for (const [file, title, note] of FRAMES) {
+        const pair = document.createElement('div');
+        pair.className = 'pair';
+        pair.innerHTML = `
+          <h2>${title}<small>${note}</small></h2>
+          <div class="wipe">
+            <img src="/artifacts/screens/${file}.png" alt="before" />
+            <div class="after"><img src="/artifacts/screens-graded/${file}.png" alt="after" /></div>
+            <div class="tagline l">Before</div>
+            <div class="tagline r">After</div>
+            <div class="handle"></div>
+          </div>`;
+        pairs.append(pair);
+
+        const wipe = pair.querySelector('.wipe');
+        const after = pair.querySelector('.after');
+        const handle = pair.querySelector('.handle');
+        const move = (event) => {
+          const box = wipe.getBoundingClientRect();
+          const x = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
+          const t = Math.min(1, Math.max(0, (x - box.left) / box.width));
+          after.style.clipPath = `inset(0 0 0 ${t * 100}%)`;
+          handle.style.left = `${t * 100}%`;
+        };
+        // Hover to scrub is enough; no drag state to get stuck in.
+        wipe.addEventListener('pointermove', move);
+      }
+
+      const ROWS = [
+        ['Grass, lit', '#74c93f', 'hue 136 · C 0.190', 'Pip hide, 41% of map', 'hue 122 · C 0.163',
+         '#9bb135', 'hue 119 · C 0.148', '14° too cold, 20% over ceiling'],
+        ['Grass, shaded', '#4f9a2c', 'hue 138 · C 0.162', 'Pip hide shadow', 'hue 118 · C 0.082',
+         '#76823b', 'hue 117 · C 0.096', '20° too cold, twice the saturation'],
+        ['Topsoil', '#6b4a2c', 'hue 62 · C 0.063', 'Tusk hide, 32%', 'hue 46 · C 0.084',
+         '#7b4a30', 'hue 48 · C 0.078', '16° too yellow'],
+        ['Dirt', '#8a6238', 'hue 66 · C 0.078', 'Coconut husk, 47%', 'hue 50 · C 0.074',
+         '#8e5b3b', 'hue 52 · C 0.082', '16° too yellow'],
+        ['Prop stone', '#8d8577', 'hue 82 · C 0.023', 'River rock, 53%', 'hue 37 · C 0.002',
+         '#6c6158', 'hue 58 · C 0.020', 'olive cast on neutral stone'],
+        ['Canopy', '#3f9c3a', 'hue 142 · C 0.162', 'War melon rind, 41%', 'hue 124 · C 0.140',
+         '#798938', 'hue 119 · C 0.108', '18° too cold'],
+        ['Canopy, deep', '#2a6f34', 'hue 146 · C 0.115', 'Melon rind shadow', 'hue 129 · C 0.122',
+         '#555929', 'hue 113 · C 0.070', '17° too cold'],
+        ['Bark', '#8a6440', 'hue 64 · C 0.071', 'Pine cluster, 23%', 'hue 47 · C 0.079',
+         '#744e38', 'hue 50 · C 0.062', '14° too yellow'],
+        ['Near ridge', '#2f6b39', 'hue 147 · C 0.101', '—', 'derived by recession',
+         '#85a472', 'hue 134 · C 0.080', 'hand-picked per layer'],
+        ['Far ridge', '#7fa8a5', 'hue 191 · C 0.045', '—', 'derived by recession',
+         '#afc9b9', 'hue 158 · C 0.035', 'teal — belonged to nothing'],
+      ];
+
+      const body = document.querySelector('#palette');
+      for (const [name, beforeHex, beforeOk, source, sourceOk, afterHex, afterOk, gap] of ROWS) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${name}</td>
+          <td class="num"><i class="chip" style="background:${beforeHex}"></i>${beforeOk}</td>
+          <td class="num">${source} — ${sourceOk}</td>
+          <td class="num"><i class="chip" style="background:${afterHex}"></i>${afterOk}</td>
+          <td class="bad">${gap}</td>`;
+        body.append(tr);
+      }
+    </script>
+  </body>
+</html>

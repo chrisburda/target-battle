@@ -1,0 +1,15 @@
+import { chromium } from '@playwright/test';
+const url = process.argv[2];
+const out = process.argv[3];
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 700, height: 880 }, deviceScaleFactor: 2 });
+const errs = [];
+p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+p.on('pageerror', (e) => errs.push(e.message));
+await p.goto(url, { waitUntil: 'load' });
+await p.waitForFunction(() => window.__GLB_READY__ === true, { timeout: 30000 }).catch(() => {});
+await p.waitForTimeout(1200);
+console.log('info:', JSON.stringify(await p.evaluate(() => window.__GLB_INFO__ ?? null)));
+await p.screenshot({ path: out });
+console.log('->', out, errs.length ? 'errors: ' + errs.join(' | ') : 'clean');
+await b.close();

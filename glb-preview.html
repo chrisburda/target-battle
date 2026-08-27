@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GLB preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #23282e; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script type="module">
+      /*
+       * Dev-only harness for eyeballing a generated GLB under the same lighting
+       * the character portrait uses, so a Tripo result can be compared fairly
+       * against the procedural fighter it might replace.
+       *
+       * Not part of the game build: Vite only bundles index.html.
+       */
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+      import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+      const params = new URLSearchParams(location.search);
+      const url = params.get('src') ?? '/tripo/pip.glb';
+      const spin = Number(params.get('spin') ?? '-0.62');
+
+      const canvas = document.querySelector('#c');
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.86;
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight, false);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x23282e);
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environmentIntensity = 0.32;
+      pmrem.dispose();
+
+      const key = new THREE.DirectionalLight(0xfff2da, 1.85);
+      key.position.set(-2.4, 3.4, 4.2);
+      scene.add(key);
+      scene.add(new THREE.HemisphereLight(0xdfeeff, 0x2b3340, 0.62));
+      const rim = new THREE.DirectionalLight(0xbcd9ff, 1.05);
+      rim.position.set(2.6, 2.2, -3.4);
+      scene.add(rim);
+
+      const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 100);
+
+      new GLTFLoader().load(url, (gltf) => {
+        const model = gltf.scene;
+        model.rotation.y = spin;
+        scene.add(model);
+
+        // Normalise: Tripo models arrive at an arbitrary scale and origin, so
+        // frame by the measured bounding box rather than guessing.
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const centre = box.getCenter(new THREE.Vector3());
+        const height = Math.max(size.y, 0.001);
+        const scale = 3.9 / height;
+        model.scale.setScalar(scale);
+        model.position.sub(centre.multiplyScalar(scale));
+        model.position.y += 3.9 / 2;
+
+        camera.position.set(0.55, 2.3, 8.2);
+        camera.lookAt(0, 1.95, 0);
+
+        let tris = 0;
+        let meshes = 0;
+        model.traverse((o) => {
+          if (o.isMesh) {
+            meshes += 1;
+            const i = o.geometry.getIndex();
+            tris += i ? i.count / 3 : o.geometry.getAttribute('position').count / 3;
+          }
+        });
+        window.__GLB_INFO__ = {
+          tris: Math.round(tris),
+          meshes,
+          sourceHeight: Number(height.toFixed(3)),
+          appliedScale: Number(scale.toFixed(3)),
+          animations: gltf.animations.length,
+        };
+        window.__GLB_READY__ = true;
+      });
+
+      renderer.setAnimationLoop(() => renderer.render(scene, camera));
+    </script>
+  </body>
+</html>
