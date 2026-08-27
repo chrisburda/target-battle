@@ -11,7 +11,7 @@ import { WorldPropKit, type PropKitOptions } from '../assets/modelFactories/Worl
 import { disposeSharedAnimalGeometry, setModelQuality } from '../assets/modelFactories/AnimalFactory';
 import {
   getFighterModelSource,
-  prepareFighterModels,
+  prepareGeneratedAssets,
   setFighterModelSource,
 } from '../assets/modelFactories/fighterModels';
 import { disposeSharedAmmoGeometry } from '../assets/modelFactories/AmmoFactory';
@@ -287,6 +287,36 @@ export class Game {
       this.audio.unlock();
       this.audio.uiClick();
     };
+    /*
+     * Flipping the switch reloads the screen's own cast, not just the match's.
+     *
+     * All six are fetched here rather than only the ones in the line-up,
+     * because the roster avatars show every animal and the portrait follows
+     * whatever is hovered — a partial load would leave the screen showing a
+     * mix of the two casts, which is worse than showing either.
+     */
+    this.setupScreen.onModelSourceChanged = (generatedModels) => {
+      setFighterModelSource(generatedModels ? 'generated' : 'built');
+      const finish = () => {
+        this.setupScreen.setBusy(false);
+        this.showroom.refresh();
+        // renderAll republishes the baked portraits, and the roster rows read
+        // them on their next paint.
+        this.characterIcons.renderAll();
+      };
+      if (!generatedModels) {
+        finish();
+        return;
+      }
+      void prepareGeneratedAssets(
+        ANIMALS.map((animal) => animal.id),
+        (loaded, total) =>
+          this.setupScreen.setBusy(loaded < total, 'Loading cast ' + loaded + '/' + total + '…'),
+      )
+        .catch((error) => console.warn('generated cast failed to load, falling back', error))
+        .finally(finish);
+    };
+
     this.setupScreen.onStart = (players, wind, generatedModels) => {
       this.audio.unlock();
       this.audio.uiConfirm();
@@ -294,12 +324,11 @@ export class Game {
       this.windEnabled = wind;
       setFighterModelSource(generatedModels ? 'generated' : 'built');
       /*
-       * The generated cast is a download, so the match cannot start on the
-       * click. Only the animals actually playing are fetched — pulling all six
-       * to play a two-hander would triple the wait for nothing — and the start
-       * button carries the progress so there is no separate spinner to build.
+       * Usually a no-op by now: flipping the switch already fetched the set.
+       * It stays because the switch can also be left alone — a player who
+       * starts with it already on from a previous match reaches here first.
        */
-      void prepareFighterModels(
+      void prepareGeneratedAssets(
         players.map((player) => player.animalId),
         (loaded, total) =>
           this.setupScreen.setBusy(total > 0, 'Loading cast ' + loaded + '/' + total + '…'),
@@ -1586,7 +1615,7 @@ export class Game {
        */
       useGeneratedCast: async () => {
         setFighterModelSource('generated');
-        await prepareFighterModels(ANIMALS.map((animal) => animal.id));
+        await prepareGeneratedAssets(ANIMALS.map((animal) => animal.id));
       },
       /*
        * What the live fighters actually came out as.
@@ -1606,6 +1635,8 @@ export class Game {
        * fighter alone silently captured eight frames of a model standing
        * still and looking like the rig had failed.
        */
+      /** Picks a round, so a capture can show one that is not the default. */
+      pickAmmo: (ammoId: string) => this.selectAmmo(ammoId),
       throwNow: () => {
         const fighter = this.activeFighter ?? this.fighters[0] ?? null;
         fighter?.startThrow();

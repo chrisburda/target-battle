@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PHYSICS, WORLD } from '../game/config';
-import { createAmmoModel, createFragmentModel } from '../assets/modelFactories/AmmoFactory';
+import { createFragmentModel } from '../assets/modelFactories/AmmoFactory';
+import { createAmmo } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import type { Terrain } from '../systems/Terrain';
 import type { VfxSystem } from './VfxSystem';
@@ -189,7 +190,7 @@ export class ProjectileSystem {
     if (cached) return cached.clone(true);
     const built = fragment
       ? createFragmentModel(this.materials, ammo)
-      : createAmmoModel(this.materials, ammo);
+      : createAmmo(this.materials, ammo);
     this.ownedGeometries.push(...built.geometries);
     this.modelCache.set(key, built.root);
     return built.root.clone(true);

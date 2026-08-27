@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createFighter } from '../assets/modelFactories/fighterModels';
+import { createFighter, releaseFighterModel } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import { ANIMALS, getAnimal } from '../game/roster';
 import { setCreaturePortrait } from '../ui/icons';
@@ -101,11 +101,7 @@ export class CharacterIcons {
     this.renderer.setRenderTarget(previousTarget);
     this.renderer.setClearAlpha(previousAlpha);
 
-    this.scene.remove(model.root);
-    model.root.traverse((object) => {
-      const asMesh = object as THREE.Mesh;
-      if (asMesh.isMesh && asMesh.geometry) asMesh.geometry.dispose();
-    });
+    releaseFighterModel(model);
 
     return url;
   }

@@ -26,6 +26,10 @@ await page.waitForFunction(() => (window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0)
 // a user actually clicks — so click that, not the input.
 await page.locator('#models-toggle').locator('xpath=following-sibling::span[1]').click();
 if (!(await page.locator('#models-toggle').isChecked())) throw new Error('HD toggle did not take');
+// Flipping the switch loads the whole cast for the screen itself, so wait for
+// that before starting — the button is disabled while it runs.
+await page.waitForFunction(() => document.querySelector('#start-match')?.textContent === 'Start match', { timeout: 30000 });
+await page.screenshot({ path: 'artifacts/look/hd-setup.png' });
 await page.locator('#start-match').click();
 
 // The button carries the download progress, so it going back to its label is

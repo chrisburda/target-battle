@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { MaterialLibrary } from '../MaterialLibrary';
 import { FLORA, hex } from '../palette';
+import { generatedPropParts, hasGeneratedProp } from './GeneratedPropFactory';
 import type { Terrain } from '../../systems/Terrain';
 import { WORLD } from '../../game/config';
 
@@ -203,6 +204,75 @@ export class WorldPropKit {
   private tintAt(x: number): number {
     const openness = this.terrain.opennessAt(x);
     return (0.86 + this.random() * 0.26) * (0.74 + 0.26 * openness);
+  }
+
+  /**
+   * The parts a family is built from — generated if one is loaded for it.
+   *
+   * The procedural template is built either way, purely to be measured. That
+   * looks wasteful and is the point: it means the generated mesh is scaled to
+   * whatever the hand-built one happens to be, so the scatter's own ranges — a
+   * palm placed between 1.3x and 2.05x — keep meaning what they meant, and
+   * regenerating a prop at a different size needs no placement re-tuning. The
+   * measurement costs microseconds and the discarded buffers are never
+   * uploaded.
+   */
+  private partsFor(key: string, built: PropTemplate): Part[] {
+    if (!hasGeneratedProp(key)) return built.parts;
+
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const part of built.parts) {
+      part.geometry.computeBoundingBox();
+      const box = part.geometry.boundingBox;
+      if (!box) continue;
+      minY = Math.min(minY, box.min.y);
+      maxY = Math.max(maxY, box.max.y);
+    }
+    if (!Number.isFinite(minY)) return built.parts;
+
+    const parts = generatedPropParts(key, Math.max(0.001, maxY - minY));
+    if (parts.length === 0) return built.parts;
+
+    return parts.map((part) => {
+      this.ownedGeometries.push(part.geometry);
+      const material = this.dressGenerated(key, part.material);
+      return { geometry: part.geometry, material };
+    });
+  }
+
+  /**
+   * Gives a generated prop's material the same wind the hand-built foliage has.
+   *
+   * A generated palm arrives as one material covering trunk and fronds
+   * together, which sounds like a problem for sway and is not: the shader
+   * scales displacement by height above the prop's own base, so the trunk stays
+   * planted and only the crown moves. Stone and timber are left alone.
+   */
+  private dressGenerated(key: string, material: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+    const strength = key === 'bush' ? 0.02 : key === 'bamboo' ? 0.035 : key === 'palm' ? 0.016 : 0;
+    if (strength === 0) {
+      this.ownedMaterials.push(material);
+      return material;
+    }
+    const swaying = makeSwayMaterial(material, strength, 'gen-' + key);
+    this.swayMaterials.push(swaying);
+    this.ownedMaterials.push(material, swaying);
+    return swaying;
+  }
+
+  /**
+   * Thins a family when it is drawn from a generated model.
+   *
+   * A generated prop carries an order of magnitude more triangles than the
+   * lathe-and-sphere version it replaces, and the counts were tuned for the
+   * cheap one. Left alone the substitution took the arena from 486k triangles
+   * to 744k against a 750k budget — no headroom, on the one frame that already
+   * holds four fighters. Fewer and better is also the right call for the look:
+   * these read at a glance where the built props needed numbers to register.
+   */
+  private generatedDensity(key: string): number {
+    return hasGeneratedProp(key) ? 0.62 : 1;
   }
 
   private skipped(key: string): boolean {
@@ -550,9 +620,8 @@ export class WorldPropKit {
    */
   private spawnCliffRocks(count: number): void {
     if (this.skipped('cliffRock')) return;
-    const built = this.cliffRock();
     const byMaterial = new Map<THREE.Material, THREE.BufferGeometry[]>();
-    for (const part of built.parts) {
+    for (const part of this.partsFor('cliffRock', this.cliffRock())) {
       const list = byMaterial.get(part.material) ?? [];
       list.push(part.geometry);
       byMaterial.set(part.material, list);
@@ -568,7 +637,7 @@ export class WorldPropKit {
      * clean face between the groups instead of an even speckle over all of it.
      */
     const placements: Placement[] = [];
-    const wanted = Math.max(1, Math.round(count * this.options.density));
+    const wanted = Math.max(1, Math.round(count * this.options.density * this.generatedDensity('cliffRock')));
     let guard = 0;
     while (placements.length < wanted && guard < wanted * 30) {
       guard += 1;
@@ -617,9 +686,8 @@ export class WorldPropKit {
     options: { minScale: number; maxScale: number; zRange: [number, number]; maxSlope?: number },
   ): void {
     if (this.skipped(key)) return;
-    const built = template();
     const byMaterial = new Map<THREE.Material, THREE.BufferGeometry[]>();
-    for (const part of built.parts) {
+    for (const part of this.partsFor(key, template())) {
       const list = byMaterial.get(part.material) ?? [];
       list.push(part.geometry);
       byMaterial.set(part.material, list);
@@ -627,7 +695,7 @@ export class WorldPropKit {
 
     const placements: Placement[] = [];
     const maxSlope = options.maxSlope ?? 1.2;
-    const wanted = Math.max(1, Math.round(count * this.options.density));
+    const wanted = Math.max(1, Math.round(count * this.options.density * this.generatedDensity(key)));
     let guard = 0;
     while (placements.length < wanted && guard < wanted * 30) {
       guard += 1;
@@ -651,9 +719,8 @@ export class WorldPropKit {
   /** Vines hang from steep edges rather than standing on flat ground. */
   private spawnVines(count: number): void {
     if (this.skipped('vine')) return;
-    const built = this.vine();
     const byMaterial = new Map<THREE.Material, THREE.BufferGeometry[]>();
-    for (const part of built.parts) {
+    for (const part of this.partsFor('vine', this.vine())) {
       const list = byMaterial.get(part.material) ?? [];
       list.push(part.geometry);
       byMaterial.set(part.material, list);
@@ -693,10 +760,19 @@ export class WorldPropKit {
     const scale = new THREE.Vector3();
 
     for (const [material, geometries] of byMaterial) {
+      /*
+       * A single geometry is used as it stands.
+       *
+       * Merging one thing with nothing still runs it through the non-indexed
+       * conversion below, which triples the vertex count of an indexed mesh for
+       * no benefit — and a generated prop is exactly that case: one indexed
+       * mesh, one material.
+       */
+      const single = geometries.length === 1 ? geometries[0] : null;
       // Normalise indexing: CircleGeometry and ExtrudeGeometry differ from the
       // rest, and a mixed set makes mergeGeometries bail out entirely.
-      const normalised = geometries.map((g) => (g.index ? g.toNonIndexed() : g));
-      const merged = mergeGeometries(normalised, false);
+      const normalised = single ? [] : geometries.map((g) => (g.index ? g.toNonIndexed() : g));
+      const merged = single ?? mergeGeometries(normalised, false);
       if (!merged) continue;
       this.ownedGeometries.push(merged);
       const mesh = new THREE.InstancedMesh(merged, material, placements.length);
@@ -727,10 +803,18 @@ export class WorldPropKit {
       for (let i = 0; i < normalised.length; i += 1) {
         if (normalised[i] !== geometries[i]) normalised[i].dispose();
       }
+      if (single) continue;
     }
 
-    // The merged source geometries were cloned into the batch; free the clones.
+    /*
+     * Free the sources that were copied into a merge.
+     *
+     * Not the single-geometry case: there the batch uses that buffer directly
+     * rather than a copy of it, so disposing here would take the mesh with it.
+     * Those are tracked in ownedGeometries and freed with everything else.
+     */
     for (const geometries of byMaterial.values()) {
+      if (geometries.length === 1) continue;
       for (const geometry of geometries) geometry.dispose();
     }
 

@@ -35,7 +35,21 @@ import { chromium } from '@playwright/test';
 const SIZES = { baseColor: 512, metallicRoughness: 256, normal: 256 };
 const QUALITY = 0.82;
 
-const CAST = ['pip', 'bruno', 'tusk', 'sly', 'bunker', 'zip'];
+/**
+ * Everything the game serves, by base name.
+ *
+ * Only these are optimised into public/. The unrigged fighters and the
+ * rejected river rock stay in assets/ as dev-harness inputs — the comparison
+ * page reads them and the game never does.
+ */
+const SERVED = [
+  ...['pip', 'bruno', 'tusk', 'sly', 'bunker', 'zip'].map((n) => n + '-rigged'),
+  'ammo-coconut',
+  'ammo-melon',
+  'ammo-cluster',
+  'ammo-hive',
+  ...['palm', 'boulder', 'log', 'bush', 'bamboo'].map((n) => 'prop-' + n),
+];
 
 function parseGlb(buffer) {
   if (buffer.readUInt32LE(0) !== 0x46546c67) throw new Error('not a GLB');
@@ -186,9 +200,9 @@ async function optimise(page, input, output) {
 async function main() {
   const args = process.argv.slice(2);
   const jobs = args.includes('--all')
-    ? CAST.map((name) => ({
-        input: 'assets/tripo/' + name + '-rigged.glb',
-        output: 'public/tripo/' + name + '-rigged.glb',
+    ? SERVED.map((name) => ({
+        input: 'assets/tripo/' + name + '.glb',
+        output: 'public/tripo/' + name + '.glb',
       }))
     : [{ input: args[0], output: args[1] }];
   if (!jobs[0]?.input || !jobs[0]?.output) throw new Error('pass <input> <output>, or --all');

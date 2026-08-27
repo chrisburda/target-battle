@@ -48,6 +48,14 @@ export class SetupScreen {
   onStart:
     | ((players: PlayerConfig[], wind: boolean, generatedModels: boolean) => void)
     | null = null;
+  /**
+   * Fired when the cast switch moves, before any match starts.
+   *
+   * The portrait and the roster avatars are the whole point of the screen, so
+   * the switch has to change what they show rather than only what the next
+   * match builds — otherwise it is a promise the screen never keeps.
+   */
+  onModelSourceChanged: ((generatedModels: boolean) => void) | null = null;
   onInteract: (() => void) | null = null;
   /** Fired whenever the previewed fighter changes. */
   onPreview: ((animalId: string) => void) | null = null;
@@ -85,7 +93,10 @@ export class SetupScreen {
     });
 
     this.windToggle.addEventListener('change', () => this.onInteract?.());
-    this.modelsToggle.addEventListener('change', () => this.onInteract?.());
+    this.modelsToggle.addEventListener('change', () => {
+      this.onInteract?.();
+      this.onModelSourceChanged?.(this.modelsToggle.checked);
+    });
   }
 
   setVisible(visible: boolean): void {
@@ -95,7 +106,12 @@ export class SetupScreen {
   /** Start button doubles as the progress readout while a cast downloads. */
   setBusy(busy: boolean, label?: string): void {
     this.startButton.disabled = busy;
+    this.modelsToggle.disabled = busy;
     this.startButton.textContent = busy ? (label ?? 'Loading…') : 'Start match';
+  }
+
+  get generatedModels(): boolean {
+    return this.modelsToggle.checked;
   }
 
   get isVisible(): boolean {

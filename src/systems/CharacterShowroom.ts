@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { FighterModel } from '../assets/modelFactories/AnimalFactory';
-import { createFighter } from '../assets/modelFactories/fighterModels';
+import { createFighter, releaseFighterModel } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import { getAnimal } from '../game/roster';
 
@@ -82,6 +82,19 @@ export class CharacterShowroom {
     return this.renderer;
   }
 
+  /**
+   * Rebuilds the current portrait from whatever the model source is now.
+   *
+   * `setAnimal` short-circuits when the id has not changed, which is right for
+   * hovering and wrong for switching casts — the id is the same and the model
+   * behind it is not.
+   */
+  refresh(): void {
+    const current = this.animalId;
+    this.animalId = '';
+    if (current) this.setAnimal(current);
+  }
+
   /** Swap the displayed fighter. Cheap enough to call on every hover. */
   setAnimal(animalId: string): void {
     if (animalId === this.animalId) return;
@@ -138,11 +151,7 @@ export class CharacterShowroom {
 
   private disposeModel(): void {
     if (!this.model) return;
-    this.pivot.remove(this.model.root);
-    this.model.root.traverse((object) => {
-      const asMesh = object as THREE.Mesh;
-      if (asMesh.isMesh && asMesh.geometry) asMesh.geometry.dispose();
-    });
+    releaseFighterModel(this.model);
     this.model = null;
   }
 

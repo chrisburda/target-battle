@@ -70,6 +70,8 @@ interface ThreeGameTestHooks {
   useGeneratedCast?: () => Promise<void>;
   /** Starts a throw on the active fighter, for animation capture. */
   throwNow?: () => boolean;
+  /** Picks a round by id, so a capture can show one that is not the default. */
+  pickAmmo?: (ammoId: string) => void;
   /** Per-fighter build facts, for diagnosing a silent adaptation failure. */
   inspectCast?: () => Array<Record<string, string | number>>;
   /** Re-seed the game RNG; all gameplay randomness flows through it. */

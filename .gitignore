@@ -23,3 +23,8 @@ assets/tripo/*.task.json
 assets/tripo/*.rejected
 public/tripo/*
 !public/tripo/*-rigged.glb
+!public/tripo/ammo-coconut.glb
+!public/tripo/ammo-melon.glb
+!public/tripo/ammo-cluster.glb
+!public/tripo/ammo-hive.glb
+!public/tripo/prop-*.glb

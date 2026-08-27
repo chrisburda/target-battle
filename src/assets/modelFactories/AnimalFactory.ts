@@ -116,6 +116,17 @@ export type FighterModel = {
    * pivot — so its groups are detached stand-ins and this copies them across.
    */
   applyPose?: () => void;
+  /**
+   * Releases whatever this model owns, when it owns less than all of it.
+   *
+   * A built fighter owns every buffer under its root, so callers can simply
+   * traverse and dispose. A generated one does not: its geometry and textures
+   * belong to a cached source that every other clone of that species shares,
+   * and disposing them takes the species down for the rest of the session.
+   * Models that need the distinction supply this; `releaseFighterModel`
+   * decides which path to take.
+   */
+  dispose?: () => void;
   diagnostics: {
     meshes: number;
     triangles: number;

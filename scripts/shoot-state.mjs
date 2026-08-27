@@ -46,6 +46,10 @@ if (process.argv.includes('--hd')) {
   await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.useGeneratedCast?.());
 }
 await page.evaluate((s) => window.__THREE_GAME_TEST_HOOKS__?.setState(s), state);
+const ammoAt = process.argv.indexOf('--ammo');
+if (ammoAt > 0) {
+  await page.evaluate((id) => window.__THREE_GAME_TEST_HOOKS__?.pickAmmo?.(id), process.argv[ammoAt + 1]);
+}
 await page.waitForTimeout(1100);
 
 // Chrome only, so the HUD can be hidden for a clean look at the world.

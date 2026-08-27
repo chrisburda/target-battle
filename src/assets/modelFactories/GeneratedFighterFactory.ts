@@ -131,6 +131,17 @@ export async function preloadGeneratedFighters(
       }
       try {
         cache.set(id, await request);
+      } catch (error) {
+        /*
+         * One asset failing must not take the batch with it.
+         *
+         * Every consumer of these caches already falls back to the hand-built
+         * version when an entry is missing, so a single 404 should cost exactly
+         * that one family — not the whole switch. Rejecting the batch instead
+         * turned an ungenerated prop into a setup screen that could not start a
+         * match, which is the failure mode this is here to prevent.
+         */
+        console.warn('generated asset failed to load: ' + id, error);
       } finally {
         pending.delete(id);
         loaded += 1;
@@ -351,6 +362,12 @@ export function createGeneratedFighterModel(
     height: worldHeight,
     localHeight,
     applyPose,
+    // Geometry and textures belong to the cached source this was cloned from.
+    // Only the contact decal and the per-fighter material clones are ours.
+    dispose: () => {
+      contact.geometry.dispose();
+      for (const material of owned) material.dispose();
+    },
     diagnostics: {
       meshes,
       triangles: Math.round(triangles),

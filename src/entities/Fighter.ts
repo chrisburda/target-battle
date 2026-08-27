@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MATCH, PHYSICS, WORLD } from '../game/config';
 import type { FighterModel } from '../assets/modelFactories/AnimalFactory';
-import { createFighter } from '../assets/modelFactories/fighterModels';
+import { createFighter, releaseFighterModel } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import type { Terrain } from '../systems/Terrain';
 import type { AnimalDef, ControllerKind, PlayerStats } from '../game/types';
@@ -615,9 +615,6 @@ export class Fighter {
     this.setHeldAmmo(null);
     for (const geometry of this.ownedGeometries) geometry.dispose();
     for (const material of this.ownedMaterials) material.dispose();
-    this.group.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.isMesh && mesh.geometry) mesh.geometry.dispose();
-    });
+    releaseFighterModel(this.model);
   }
 }
