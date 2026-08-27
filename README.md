@@ -1,5 +1,7 @@
 # Target Battle
 
+**[Play it in your browser](https://chrisburda.github.io/target-battle/)** — no install, works on desktop and mobile.
+
 A hot-seat artillery game for 1–4 players. You pick **who to hit**; the **power
 interval** decides whether you actually hit them.
 
@@ -18,7 +20,7 @@ one-line change (see *Trainer integration* below).
 
 ---
 
-## Running it
+## Running it locally
 
 ```bash
 npm install
