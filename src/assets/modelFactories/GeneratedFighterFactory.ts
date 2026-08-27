@@ -163,6 +163,71 @@ function axisInParentSpace(root: THREE.Object3D, bone: THREE.Object3D): THREE.Ve
   return new THREE.Vector3(0, 0, 1).applyQuaternion(relative).normalize();
 }
 
+/**
+ * Bounds of the vertices actually skinned to the head bone, in root space.
+ *
+ * A bone is a point with no extent, which is not enough to frame a portrait
+ * with: a toucan's beak reaches half a head forward of its skull joint and a
+ * frog's barely reaches at all. The skin already knows which vertices belong
+ * to the head, so ask it — anything weighted mostly to that joint is the head,
+ * and the box around them is what the camera should be looking at.
+ *
+ * Read at the bind pose, which is where the model is when this runs. Skinning
+ * at rest is close enough to the identity that the difference does not survive
+ * being rounded to a 96-pixel avatar.
+ */
+function measureHeadBounds(
+  root: THREE.Object3D,
+  armature: THREE.Object3D,
+  head: THREE.Bone | undefined,
+): THREE.Box3 {
+  const box = new THREE.Box3();
+  root.updateMatrixWorld(true);
+  if (!head) return box.setFromObject(armature);
+
+  const point = new THREE.Vector3();
+  armature.traverse((node) => {
+    const mesh = node as THREE.SkinnedMesh;
+    if (!mesh.isSkinnedMesh) return;
+    const skeleton = mesh.skeleton;
+    const jointIndex = skeleton.bones.indexOf(head);
+    if (jointIndex < 0) return;
+
+    const positions = mesh.geometry.getAttribute('position');
+    const indices = mesh.geometry.getAttribute('skinIndex');
+    const weights = mesh.geometry.getAttribute('skinWeight');
+    if (!positions || !indices || !weights) return;
+
+    for (let i = 0; i < positions.count; i += 1) {
+      let weight = 0;
+      // Four influences per vertex, and the head may occupy more than one.
+      for (let slot = 0; slot < 4; slot += 1) {
+        if (indices.getComponent(i, slot) === jointIndex) {
+          weight += weights.getComponent(i, slot);
+        }
+      }
+      // Half is the natural cut: a vertex the head owns outright rather than
+      // one the neck is sharing, which would drag the box down the throat.
+      if (weight < 0.5) continue;
+      point.fromBufferAttribute(positions, i).applyMatrix4(mesh.matrixWorld);
+      box.expandByPoint(point);
+    }
+  });
+
+  if (box.isEmpty()) box.setFromObject(armature);
+  /*
+   * Back into the root's own space.
+   *
+   * This runs after the root has been scaled, so the points collected above
+   * are in world units — while the built fighter measures its head before
+   * scaling and reports root units. Callers apply the root matrix, so one
+   * of the two would get the scale twice. Both report root units.
+   */
+  return box.applyMatrix4(INVERSE_ROOT.copy(root.matrixWorld).invert());
+}
+
+const INVERSE_ROOT = new THREE.Matrix4();
+
 export function createGeneratedFighterModel(
   materials: MaterialLibrary,
   def: AnimalDef,
@@ -283,6 +348,8 @@ export function createGeneratedFighterModel(
   ].filter((driver): driver is Driver => driver !== null);
   const headDriver = driverFor(BONES.head, 1);
 
+  const headBounds = measureHeadBounds(root, armature, bones.get(BONES.head));
+
   /*
    * The grip carries an inverse of the fit scale.
    *
@@ -353,8 +420,7 @@ export function createGeneratedFighterModel(
     facing,
     body,
     head: headProxy,
-    // The bone, not the proxy: the proxy never moves off the origin.
-    headAnchor: bones.get(BONES.head) ?? fit,
+    headBounds,
     throwArm: armProxy,
     hand: grip,
     // No morph targets and no eyelid geometry: this cast does not blink.
@@ -376,6 +442,11 @@ export function createGeneratedFighterModel(
       triangles: Math.round(triangles),
       occlusion: { samples: 0, discs: 0, min: 1, mean: 1, ms: 0 },
       bones: drivers.length,
+      headBox: [
+        Number((headBounds.max.x - headBounds.min.x).toFixed(3)),
+        Number((headBounds.max.y - headBounds.min.y).toFixed(3)),
+        Number((headBounds.max.z - headBounds.min.z).toFixed(3)),
+      ].join(String.fromCharCode(120)),
       swingAxis: swingChain
         .map((driver) => driver.bone.name + ':' + driver.axis.toArray().map((v) => v.toFixed(2)).join('/'))
         .join('  '),

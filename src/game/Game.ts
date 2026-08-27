@@ -1649,6 +1649,8 @@ export class Game {
             handParent: fighter.model.hand.parent?.name ?? '(none)',
             bones: fighter.model.diagnostics.bones ?? 0,
             swingAxis: fighter.model.diagnostics.swingAxis ?? '',
+            headBox: fighter.model.diagnostics.headBox ?? '',
+            localHeight: Number(fighter.model.localHeight.toFixed(3)),
             triangles: fighter.model.diagnostics.triangles,
             declaredHeight: Number(fighter.model.height.toFixed(3)),
             measuredHeight: Number((box.max.y - box.min.y).toFixed(3)),

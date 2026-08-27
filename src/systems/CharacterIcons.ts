@@ -22,6 +22,8 @@ export class CharacterIcons {
 
   private readonly scene = new THREE.Scene();
   private static readonly SCRATCH = new THREE.Vector3();
+  private static readonly SIZE_SCRATCH = new THREE.Vector3();
+  private static readonly BOX = new THREE.Box3();
 
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 0.05, 40);
   private readonly target: THREE.WebGLRenderTarget;
@@ -66,19 +68,32 @@ export class CharacterIcons {
     this.scene.add(model.root);
 
     /*
-     * Framed off the head's own position, not a fraction of total height.
+     * Framed to fit the head, not aimed at a point near it.
      *
-     * 0.78 of the standing height is a fair guess for most of this cast and it
-     * is only ever a guess — it encodes one particular head-to-body ratio. The
-     * frog has a squat body under a large skull, and the moment its
-     * proportions moved, its avatar framed the chest with the face out of
-     * shot. The head is a named node on the model; asking it where it is costs
-     * one matrix update and cannot drift.
+     * Distance comes from the box radius and the lens, so every species fills
+     * the same share of the frame however big its skull is; the camera aims at
+     * the box centre, so a long muzzle pulls the shot forward with it instead
+     * of hanging off one edge. Aiming at a point with a fixed distance did
+     * neither, and produced a cropped toucan beside a distant frog.
      */
     model.root.updateMatrixWorld(true);
-    const headY = model.headAnchor.getWorldPosition(CharacterIcons.SCRATCH).y;
-    this.camera.position.set(0.62, headY + 0.22, 4.6);
-    this.camera.lookAt(0, headY - 0.16, 0);
+    const head = CharacterIcons.BOX.copy(model.headBounds).applyMatrix4(model.root.matrixWorld);
+    const centre = head.getCenter(CharacterIcons.SCRATCH);
+    const radius = Math.max(0.05, head.getSize(CharacterIcons.SIZE_SCRATCH).length() / 2);
+
+    // Margin leaves the head clear of the crop; the offsets hold the same
+    // three-quarter angle the portrait uses.
+    const fov = THREE.MathUtils.degToRad(this.camera.fov);
+    // 1.5 framed the whole fighter: on this cast the skull is 40-60% of
+    // standing height, so a sphere around it already reaches the feet. 1.12
+    // brings the face up to button size without clipping the widest head.
+    const distance = (radius / Math.tan(fov / 2)) * 1.12;
+    this.camera.position.set(
+      centre.x + distance * 0.13,
+      centre.y + radius * 0.16,
+      centre.z + distance,
+    );
+    this.camera.lookAt(centre);
     this.camera.updateProjectionMatrix();
 
     const previousTarget = this.renderer.getRenderTarget();

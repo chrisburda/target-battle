@@ -92,16 +92,17 @@ export type FighterModel = {
   body: THREE.Group;
   head: THREE.Group;
   /**
-   * Where the head actually is, for anything that needs to look at it.
+   * The head as a volume, in the root's own space.
    *
-   * Separate from `head` because on a skinned model the two are different
-   * objects: `head` is a detached proxy that exists to be rotated, and it sits
-   * at the origin forever. Framing a portrait on it pointed the avatar camera
-   * at the fighter's feet — every generated avatar came out as a shot of a
-   * torso. Posing and measuring are not the same job here, so they get
-   * separate handles.
+   * A point is not enough, and two attempts proved it. Framing on a fraction
+   * of standing height broke the moment one species changed proportions.
+   * Framing on the head node put the camera at the right height and still
+   * cropped a toucan's beak, buried a gecko's face against the left edge and
+   * left a frog looking distant — because heads differ in size and in how far
+   * they sit from the neck, and a point carries neither. A box carries both,
+   * so a camera can aim at its centre and pull back to fit its radius.
    */
-  headAnchor: THREE.Object3D;
+  headBounds: THREE.Box3;
   /** Throwing arm; rotated on the Z axis during the wind-up. */
   throwArm: THREE.Group;
   /** World anchor the projectile spawns from. */
@@ -146,6 +147,8 @@ export type FighterModel = {
     bones?: number;
     /** Axes the swing chain rotates about, in the model's own space. */
     swingAxis?: string;
+    /** Head box extents in root units, so bad framing is visible as numbers. */
+    headBox?: string;
   };
 };
 
@@ -1592,6 +1595,14 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
    */
   const occlusion = bakeAmbientOcclusion(root);
 
+  /*
+   * Measured before the root is scaled, so the box is in the root's own
+   * units — the same space `localHeight` is quoted in. Whatever frames it
+   * applies the root's world matrix to reach world coordinates.
+   */
+  root.updateMatrixWorld(true);
+  const headBounds = new THREE.Box3().setFromObject(head);
+
   root.scale.setScalar(prop.scale * FIGHTER_SCALE);
 
   let meshes = 0;
@@ -1610,8 +1621,7 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
     facing,
     body,
     head,
-    // The built fighter's head is a real node, so it is both.
-    headAnchor: head,
+    headBounds,
     throwArm,
     hand: throwArmParts.grip,
     lids: eyes.map((eye) => eye.lid),
