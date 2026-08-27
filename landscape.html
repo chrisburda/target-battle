@@ -28,16 +28,17 @@
       .pair h2 { margin: 0; padding: 10px 14px; font-size: 15px;
                  border-bottom: 1px solid var(--hairline); }
       .pair h2 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 10px; }
-      /* Drag-to-reveal: the two frames are identical except for the work, so a
-         wipe shows the difference far better than two images side by side. */
-      .wipe { position: relative; user-select: none; cursor: ew-resize; line-height: 0; }
-      .wipe img { display: block; width: 100%; }
-      .wipe .after { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }
-      .wipe .handle { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
-                      background: var(--tripo); pointer-events: none; }
-      .wipe .handle::after { content: ''; position: absolute; top: 50%; left: 50%;
-                             width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
-                             background: var(--tripo); box-shadow: 0 2px 8px rgba(0,25,50,.4); }
+      /* Side by side, not a wipe.
+         A wipe was the first instinct and it does not survive contact with how
+         these frames are made: the harness drives the real game and screenshots
+         it after a fixed wall-clock settle, so two runs of the same build with
+         the same seed already differ across a fifth of their pixels as the
+         camera eases in. Overlaying frames that do not register invites reading
+         a camera difference as a change to the work. */
+      .shots { display: grid; grid-template-columns: 1fr 1fr; }
+      .shot { position: relative; line-height: 0; }
+      .shot + .shot { border-left: 1px solid var(--hairline); }
+      .shot img { display: block; width: 100%; }
       .tagline { position: absolute; top: 10px; font-size: 10px; letter-spacing: .1rem;
                  text-transform: uppercase; padding: 3px 7px; border-radius: 2px;
                  background: rgba(0,0,0,.62); pointer-events: none; }
@@ -65,13 +66,16 @@
         The landscape rebuilt to sit with the generated characters. Colour is not eyeballed:
         every albedo map in the generated set was decoded and k-means clustered in OKLab
         (<code>scripts/tripo-palette.mjs</code>), and the landscape palette is derived from those
-        cluster centres. Drag any frame to wipe between before and after. Same seed, same
-        camera, same lighting — only the terrain, materials and palette changed.
+        cluster centres. Same seed and the same lighting rig on both
+        sides; only the terrain, its materials and the palette changed.
       </p>
     </header>
 
     <h3 class="section">Frames</h3>
-    <p class="hint">Drag left/right across an image.</p>
+    <p class="hint">
+      Both sides run the real game at seed 2026. The camera settles in real time, so the two
+      framings are close but not identical — compare the surfaces, not the composition.
+    </p>
     <div class="pairs" id="pairs"></div>
 
     <h3 class="section">What the measurement said</h3>
@@ -99,6 +103,7 @@
         ['desktop-02-aim', 'Target select', 'wide enough to show both fighters and the ridge'],
         ['desktop-04-flight', 'Shot in flight', 'camera leading the projectile'],
         ['desktop-03-interval', 'Power interval', 'the frame the player stares at while tapping'],
+        ['desktop-08-arena', 'Whole arena', 'four fighters, the widest the camera goes'],
       ];
 
       const pairs = document.querySelector('#pairs');
@@ -107,27 +112,17 @@
         pair.className = 'pair';
         pair.innerHTML = `
           <h2>${title}<small>${note}</small></h2>
-          <div class="wipe">
-            <img src="/artifacts/screens/${file}.png" alt="before" />
-            <div class="after"><img src="/artifacts/screens-graded/${file}.png" alt="after" /></div>
-            <div class="tagline l">Before</div>
-            <div class="tagline r">After</div>
-            <div class="handle"></div>
+          <div class="shots">
+            <div class="shot">
+              <img src="/artifacts/screens-before/${file}.png" alt="before" />
+              <div class="tagline l">Before</div>
+            </div>
+            <div class="shot">
+              <img src="/artifacts/screens-graded/${file}.png" alt="after" />
+              <div class="tagline l" style="color:var(--tripo)">After</div>
+            </div>
           </div>`;
         pairs.append(pair);
-
-        const wipe = pair.querySelector('.wipe');
-        const after = pair.querySelector('.after');
-        const handle = pair.querySelector('.handle');
-        const move = (event) => {
-          const box = wipe.getBoundingClientRect();
-          const x = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
-          const t = Math.min(1, Math.max(0, (x - box.left) / box.width));
-          after.style.clipPath = `inset(0 0 0 ${t * 100}%)`;
-          handle.style.left = `${t * 100}%`;
-        };
-        // Hover to scrub is enough; no drag state to get stuck in.
-        wipe.addEventListener('pointermove', move);
       }
 
       const ROWS = [
