@@ -13,7 +13,8 @@
     "capture:states": "node scripts/capture-states.mjs",
     "playtest:bot": "node scripts/bot-playtest.mjs",
     "verify:all": "npm run build && npm run test && npm run playtest:bot && npm run capture:states",
-    "capture:characters": "node scripts/character-sheet.mjs"
+    "capture:characters": "node scripts/character-sheet.mjs",
+    "gen:character": "node scripts/tripo-character.mjs"
   },
   "dependencies": {
     "three": "^0.184.0"
