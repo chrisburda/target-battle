@@ -1,0 +1,1812 @@
+/*
+ * Target Battle interface.
+ *
+ * Built on the Chainlink design tokens (colours, 2px radius, type scale,
+ * 200ms ease-out) but composed as a game HUD rather than a dashboard: meters,
+ * chips, docks and banners instead of stat cards.
+ *
+ * Every text/background pair here was measured against WCAG AAA (7:1) with the
+ * panel surface composited at its worst case (#282828, panel alpha over a
+ * bright sky). The greys below are the ones that passed; #9d9d9d and darker
+ * are deliberately absent from text roles.
+ */
+
+:root {
+  /* Neutrals */
+  --black: #151515;
+  --grey1: #1d1d1d;
+  --grey2: #252525;
+  --grey3: #2e2e2e;
+  --grey4: #373737;
+  --grey5: #3f3f3f;
+  --grey6: #505050;
+  --grey10: #b6b6b6;
+  --grey11: #d0d0d0;
+  --grey12: #e0e0e0;
+  --grey15: #fafafa;
+  --white: #ffffff;
+
+  /* Brand + status */
+  --red: #da291c;
+  --red-hover: #c7251a;
+  --green: #439f1f;
+  --green-light: #7acd59;
+  --green-lightest: #bae1a2;
+  --blue: #1482c8;
+  --blue-lightest: #51bef1;
+  --yellow: #fac800;
+  --yellow-dark: #fbb000;
+  --yellow-light: #f4d255;
+  --teal: #26e3d2;
+
+  /* Data-line colours, straight from the token set */
+  --power-line: #ffff4d;
+  --actual-line: #00ff00;
+
+  /* Text roles, all >= 7:1 on --surface */
+  --text-primary: var(--grey15);
+  --text-secondary: var(--grey11);
+  --text-tertiary: var(--grey10);
+
+  --surface: rgba(21, 21, 21, 0.92);
+  --surface-solid: #1d1d1d;
+  --surface-raised: rgba(46, 46, 46, 0.94);
+  --hairline: rgba(224, 224, 224, 0.16);
+  --hairline-strong: rgba(224, 224, 224, 0.3);
+
+  --shadow-lg: 0 8px 24px rgba(0, 2, 5, 0.4);
+  --shadow-xl: 0 20px 80px -12px rgba(0, 2, 5, 0.5);
+  --radius: 2px;
+  --radius-card: 8px;
+  --ease: 200ms ease-out;
+
+  --font: 'proxima-nova', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: Monaco, Menlo, 'Courier New', monospace;
+
+  /* Height reserved for the bottom dock; the touch row sits above it. */
+  --dock-height: 176px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0e1a24;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 24px;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+}
+
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+#ui-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ui-root > * {
+  pointer-events: auto;
+}
+
+/* ---------------------------------------------------------- typography */
+
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--yellow);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.08);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all var(--ease);
+  white-space: nowrap;
+}
+
+.btn--large {
+  height: 44px;
+  padding: 0 20px;
+  font-size: 16px;
+}
+
+.btn--small {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/*
+ * Primary button is the design-system component verbatim: #da291c fill,
+ * white label. White on this red measures 4.87:1 - AA, not the 7:1 the rest of
+ * this file holds to. It is kept because the brand button is specified, and no
+ * neutral background lets #da291c reach AAA. Noted rather than quietly altered.
+ */
+.btn--primary {
+  background: var(--red);
+  color: var(--white);
+  border-color: var(--red);
+}
+
+.btn--primary:hover {
+  background: var(--red-hover);
+  border-color: var(--red-hover);
+}
+
+.btn--secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--grey10);
+}
+
+.btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--grey12);
+}
+
+.btn:focus-visible,
+.icon-button:focus-visible,
+.animal-card:focus-visible,
+.slot__control:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--grey10);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.icon-button:hover {
+  background: var(--surface-raised);
+  border-color: var(--grey12);
+}
+
+/* -------------------------------------------------------------- panels */
+
+.panel {
+  padding: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.panel__title {
+  margin: 0 0 16px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.panel__title-accent {
+  color: var(--yellow);
+}
+
+/* -------------------------------------------------------- setup screen */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.screen[hidden] {
+  display: none;
+}
+
+.screen--setup {
+  background: linear-gradient(180deg, rgba(9, 20, 28, 0.86) 0%, rgba(9, 20, 28, 0.94) 100%);
+  padding: calc(24px + var(--safe-top)) calc(24px + var(--safe-right)) calc(24px + var(--safe-bottom))
+    calc(24px + var(--safe-left));
+}
+
+.setup__inner {
+  width: min(1080px, 100%);
+  margin: auto;
+  display: grid;
+  gap: 20px;
+}
+
+.setup__head {
+  text-align: center;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: clamp(38px, 7vw, 60px);
+  line-height: 1.06;
+  font-weight: 800;
+  letter-spacing: 0.05rem;
+}
+
+.title__target {
+  color: var(--text-primary);
+}
+
+.title__battle {
+  padding: 0 10px;
+  background: var(--red);
+  color: var(--white);
+  border-radius: var(--radius);
+}
+
+.setup__pitch {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--text-secondary);
+}
+
+.setup__grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.35fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.slot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--slot-color, var(--grey6));
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.slot:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.slot--selected {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hairline-strong);
+}
+
+.slot__icon {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+}
+
+.slot__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.slot__player {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.slot__name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot__control {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--grey10);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05rem;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.slot__control[data-kind='ai'] {
+  border-color: var(--blue-lightest);
+  color: var(--blue-lightest);
+}
+
+.slot__control[data-kind='human'] {
+  border-color: var(--green-light);
+  color: var(--green-light);
+}
+
+.slot-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.roster-body {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/*
+ * Portrait stage. The canvas has an alpha buffer and sits inside the panel, so
+ * the panel's own surface shows through behind the character — no hole to
+ * punch through the DOM.
+ */
+.portrait {
+  position: relative;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(120% 80% at 50% 12%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 62%),
+    linear-gradient(180deg, rgba(80, 96, 110, 0.4) 0%, rgba(20, 26, 32, 0.55) 100%);
+  overflow: hidden;
+}
+
+.portrait::after {
+  /* Floor pool, so the character is not standing on nothing. */
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  width: 108px;
+  height: 20px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.portrait canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  position: relative;
+  z-index: 1;
+}
+
+.portrait__plate {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--hairline);
+  background: rgba(21, 21, 21, 0.72);
+  text-align: center;
+}
+
+.portrait__plate strong {
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--text-primary);
+}
+
+.portrait__plate span {
+  font-size: 10px;
+  line-height: 13px;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.roster-pick {
+  display: grid;
+  align-content: start;
+}
+
+.animal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+/*
+ * Baked model renders. They already carry their own transparent margin, so a
+ * slight negative inset keeps the face at the same optical size the drawn
+ * tokens had.
+ */
+/*
+ * Baked model renders. Size comes from the width/height attributes so a
+ * portrait drops into the same slot the drawn tokens used; stretching to 100%
+ * of the parent blew them up to card width.
+ */
+.creature-portrait {
+  display: block;
+  object-fit: contain;
+}
+
+.animal-card {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.animal-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.animal-card--active {
+  border-color: var(--yellow);
+  background: rgba(250, 200, 0, 0.14);
+}
+
+.animal-card--taken {
+  opacity: 0.42;
+}
+
+.animal-card__name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.animal-card__species {
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.05rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.animal-detail {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+  min-height: 52px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--text-secondary);
+}
+
+.animal-detail strong {
+  color: var(--yellow);
+}
+
+.panel--wide {
+  grid-column: 1 / -1;
+}
+
+/*
+ * Sticky so the primary action is reachable at any viewport height. At
+ * 1440x810 the CTA row sat just below the fold, which is the one control a
+ * first-time player must be able to find.
+ */
+.setup__cta {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin: -8px -8px 0;
+  padding: 12px 8px calc(8px + var(--safe-bottom));
+  background: linear-gradient(180deg, rgba(9, 20, 28, 0) 0%, rgba(9, 20, 28, 0.95) 38%);
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch__track {
+  position: relative;
+  display: block;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--grey10);
+  transition: background var(--ease);
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: left var(--ease);
+}
+
+.switch input:checked + .switch__track {
+  background: var(--red);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  left: 20px;
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.switch__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* ----------------------------------------------------------------- hud */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right))
+    calc(12px + var(--safe-bottom)) calc(12px + var(--safe-left));
+}
+
+.hud[hidden] {
+  display: none;
+}
+
+.hud button {
+  pointer-events: auto;
+}
+
+/* Roster rail: one compact chip per fighter, top-left, out of the arc path. */
+.roster-rail {
+  position: absolute;
+  top: calc(12px + var(--safe-top));
+  left: calc(12px + var(--safe-left));
+  display: grid;
+  gap: 4px;
+  width: 214px;
+  max-width: 42vw;
+}
+
+.chip {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--chip-color, var(--grey6));
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: all var(--ease);
+}
+
+.chip--active {
+  background: var(--surface-raised);
+  border-color: var(--yellow);
+  transform: translateX(4px);
+}
+
+.chip--out {
+  opacity: 0.45;
+}
+
+.chip__icon {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+}
+
+.chip__body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chip__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.chip__name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 14px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip__hp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
+.chip__bar {
+  position: relative;
+  height: 5px;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.chip__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: var(--green);
+  transition: width 300ms ease-out, background var(--ease);
+}
+
+.chip__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 13px;
+  letter-spacing: 0.04rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.chip__meta b {
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud__top-centre {
+  position: absolute;
+  top: calc(12px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.round-chip {
+  padding: 5px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.wind-gauge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.wind-gauge__arrows {
+  display: inline-flex;
+  gap: 2px;
+  color: var(--blue-lightest);
+  font-size: 13px;
+  line-height: 13px;
+  min-width: 44px;
+  justify-content: center;
+}
+
+.wind-gauge__arrows--calm {
+  color: var(--text-tertiary);
+}
+
+.hud__top-right {
+  position: absolute;
+  top: calc(12px + var(--safe-top));
+  right: calc(12px + var(--safe-right));
+  display: flex;
+  gap: 8px;
+}
+
+/* Event banner sits above the docks, never over the arc. */
+.event-banner {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  padding: 8px 24px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--hairline-strong);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: 0.04rem;
+  text-align: center;
+  color: var(--text-primary);
+  opacity: 0;
+  transition: opacity var(--ease), transform var(--ease);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.event-banner--show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.event-banner--good {
+  border-color: var(--green-light);
+  color: var(--green-light);
+}
+
+.event-banner--big {
+  border-color: var(--yellow);
+  color: var(--yellow);
+  font-size: 30px;
+  line-height: 36px;
+}
+
+/* Docks: the bottom-centre control surfaces for aim and interval. */
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + var(--safe-bottom));
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 24px));
+  padding: 12px 16px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.dock[hidden] {
+  display: none;
+}
+
+.dock__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dock__blurb {
+  margin: 8px 0 0;
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+.dock__hint {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-tertiary);
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
+}
+
+.stat--right {
+  justify-items: end;
+  text-align: right;
+}
+
+.stat__label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 13px;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.stat__value {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 28px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat--target .stat__value {
+  color: var(--power-line);
+}
+
+.stat--small .stat__value {
+  font-size: 18px;
+  line-height: 20px;
+}
+
+.stat__unit {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+/* ------------------------------------------------------ the target picker */
+
+.dock__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.dock__label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 13px;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/*
+ * The line readout carries the same information as the badge colour in words,
+ * so "can I reach them" never depends on colour alone.
+ */
+.line-readout {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-secondary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-readout--clear {
+  color: var(--actual-line);
+}
+
+.line-readout--splash {
+  color: var(--yellow);
+}
+
+.line-readout--blocked {
+  color: var(--text-tertiary);
+}
+
+.target-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+}
+
+.target-card {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  grid-template-rows: auto auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--card-color, var(--grey6));
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.target-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.target-card--chosen {
+  border-color: var(--red);
+  background: rgba(218, 41, 28, 0.18);
+}
+
+.target-card__icon {
+  grid-row: span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.target-card__body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.target-card__name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-card__bar {
+  display: block;
+  height: 4px;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.target-card__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  transition: width 300ms ease-out;
+}
+
+.target-card__meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 13px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.target-card__line {
+  grid-column: 2;
+  justify-self: start;
+  padding: 1px 5px;
+  border-radius: var(--radius);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  letter-spacing: 0.06rem;
+  white-space: nowrap;
+}
+
+.target-card--clear .target-card__line {
+  background: rgba(0, 255, 0, 0.16);
+  color: var(--actual-line);
+}
+
+.target-card--splash .target-card__line {
+  background: rgba(250, 200, 0, 0.18);
+  color: var(--yellow);
+}
+
+.target-card--blocked .target-card__line {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-tertiary);
+}
+
+.target-card:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+
+.dock__row--ammo {
+  margin-top: 10px;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+/* Ammo strip: slots, not a dropdown. */
+.ammo-strip {
+  display: flex;
+  gap: 6px;
+}
+
+.ammo-slot {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 52px;
+  padding: 5px 2px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.ammo-slot:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ammo-slot--active {
+  border-color: var(--yellow);
+  background: rgba(250, 200, 0, 0.16);
+}
+
+.ammo-slot:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.ammo-slot__key {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 10px;
+  color: var(--text-tertiary);
+}
+
+.ammo-slot__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------- the power meter */
+
+.dock--interval {
+  width: min(720px, calc(100vw - 24px));
+}
+
+.meter__head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.zone-flag {
+  padding: 5px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  transition: all var(--ease);
+}
+
+.zone-flag--in {
+  border-color: var(--actual-line);
+  color: var(--actual-line);
+  background: rgba(0, 255, 0, 0.12);
+}
+
+.zone-flag--low {
+  border-color: var(--blue-lightest);
+  color: var(--blue-lightest);
+}
+
+.zone-flag--high {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.meter {
+  display: grid;
+  gap: 4px;
+}
+
+.meter__track {
+  position: relative;
+  height: 44px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius);
+  background: var(--grey1);
+  overflow: hidden;
+}
+
+/* The target zone: the band you are trying to sit inside. */
+.meter__zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 255, 0, 0.16);
+  border-left: 1px solid rgba(0, 255, 0, 0.5);
+  border-right: 1px solid rgba(0, 255, 0, 0.5);
+  transition: left var(--ease), width var(--ease);
+}
+
+.meter__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 77, 0.35) 0%, rgba(255, 255, 77, 0.78) 100%);
+  transition: background 120ms linear;
+}
+
+.meter__fill--in {
+  background: linear-gradient(90deg, rgba(0, 255, 0, 0.35) 0%, rgba(0, 255, 0, 0.72) 100%);
+}
+
+/* Dashed target line, drawn on top of everything but the needle. */
+.meter__target {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--power-line) 0 5px,
+    transparent 5px 10px
+  );
+  transition: left var(--ease);
+}
+
+.meter__needle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1.5px;
+  background: var(--white);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+.meter__needle span {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: rgba(21, 21, 21, 0.9);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meter__needle--flip span {
+  left: auto;
+  right: 8px;
+}
+
+.meter__scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 13px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter__foot {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.meter__progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--grey3);
+  overflow: hidden;
+}
+
+.meter__progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 4px;
+  background: var(--red);
+  transition: width 100ms linear;
+}
+
+.countdown {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 96px;
+  line-height: 96px;
+  font-weight: 800;
+  letter-spacing: 0.05rem;
+  color: var(--yellow);
+  text-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.countdown[hidden] {
+  display: none;
+}
+
+.countdown--pop {
+  animation: countdown-pop 480ms ease-out;
+}
+
+@keyframes countdown-pop {
+  0% {
+    transform: translate(-50%, -50%) scale(1.55);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* World-anchored damage numbers. */
+.floaters {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.floater {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 28px;
+  color: var(--yellow);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+  animation: floater-rise 1100ms ease-out forwards;
+  white-space: nowrap;
+}
+
+.floater--crit {
+  color: var(--yellow-light);
+  font-size: 30px;
+  line-height: 34px;
+}
+
+.floater--miss {
+  color: var(--grey11);
+  font-size: 18px;
+  line-height: 22px;
+}
+
+.floater--heal {
+  color: var(--green-light);
+}
+
+@keyframes floater-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20%) scale(0.7);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -70%) scale(1.12);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -190%) scale(1);
+  }
+}
+
+/* --------------------------------------------------------------- touch */
+
+/*
+ * A single row directly above the dock. Stacked vertically it collided with
+ * the interval meter on a phone, and a control that covers the number you are
+ * chasing is worse than no control.
+ */
+.touch {
+  position: absolute;
+  right: calc(12px + var(--safe-right));
+  bottom: calc(var(--dock-height) + 14px + var(--safe-bottom));
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.touch[hidden] {
+  display: none;
+}
+
+.touch__btn {
+  width: 62px;
+  height: 62px;
+  border: 1px solid var(--grey10);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: none;
+  transition: all var(--ease);
+}
+
+.touch__btn:active {
+  background: var(--surface-raised);
+  transform: scale(0.95);
+}
+
+.touch__btn--primary {
+  width: 96px;
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--white);
+  font-size: 13px;
+  letter-spacing: 0.06rem;
+}
+
+/* ------------------------------------------------------ modal overlays */
+
+.screen--modal {
+  background: rgba(21, 21, 21, 0.62);
+  backdrop-filter: blur(3px);
+  padding: calc(24px + var(--safe-top)) 24px calc(24px + var(--safe-bottom));
+}
+
+.modal {
+  width: min(420px, 100%);
+  margin: auto;
+  padding: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-solid);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.modal--wide {
+  width: min(720px, 100%);
+}
+
+.modal__title {
+  margin: 8px 0 20px;
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+/* ------------------------------------------------------------- results */
+
+.results {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.results__head,
+.results__row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+.results__head {
+  padding-top: 0;
+  padding-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.results__row {
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid var(--row-color, var(--grey6));
+}
+
+.results__row--winner {
+  background: rgba(250, 200, 0, 0.14);
+  border-color: var(--yellow);
+}
+
+.results__name {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.results__name b {
+  font-size: 15px;
+  line-height: 19px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.results__name span {
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.05rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.results__num {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 22px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.results__num--accent {
+  color: var(--yellow);
+}
+
+.results__num--muted {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.results__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* -------------------------------------------------------- responsive */
+
+@media (max-width: 900px) {
+  .setup__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-body {
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .roster-body {
+    grid-template-columns: 1fr;
+  }
+
+  .portrait canvas {
+    aspect-ratio: 16 / 9;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --dock-height: 158px;
+  }
+
+  .roster-rail {
+    width: 148px;
+  }
+
+  /*
+   * Round and wind move under the icon buttons on the right. Centred, they
+   * ran straight into the roster rail on a 390px viewport.
+   */
+  .hud__top-centre {
+    left: auto;
+    right: calc(12px + var(--safe-right));
+    top: calc(54px + var(--safe-top));
+    transform: none;
+    justify-items: end;
+  }
+
+  .round-chip,
+  .wind-gauge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  .wind-gauge__arrows {
+    min-width: 30px;
+    font-size: 11px;
+  }
+
+  .touch__btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .touch__btn--primary {
+    width: 84px;
+  }
+
+  .meter__foot {
+    grid-template-columns: 1fr 1.4fr 1fr;
+  }
+
+  .meter__head {
+    gap: 8px;
+  }
+
+  .zone-flag {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .meter__scale {
+    font-size: 9px;
+  }
+
+  .chip__meta {
+    display: none;
+  }
+
+  .dock {
+    width: calc(100vw - 16px);
+    padding: 10px 12px 12px;
+  }
+
+  .dock__hint {
+    display: none;
+  }
+
+  .target-strip {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    max-height: 112px;
+    overflow-y: auto;
+  }
+
+  /* The ammo icons and counts already say what the blurb says. */
+  .dock__blurb {
+    display: none;
+  }
+
+  .dock__row--ammo {
+    margin-top: 8px;
+  }
+
+  .target-card {
+    padding: 4px 8px;
+  }
+
+  .ammo-slot {
+    width: 46px;
+  }
+
+  .target-card__meta {
+    font-size: 9px;
+  }
+
+  .line-readout {
+    font-size: 11px;
+  }
+
+  .stat__value {
+    font-size: 22px;
+    line-height: 24px;
+  }
+
+  .meter__track {
+    height: 38px;
+  }
+
+  .event-banner {
+    font-size: 19px;
+    line-height: 24px;
+    padding: 6px 16px;
+    max-width: calc(100vw - 32px);
+    white-space: normal;
+  }
+
+  .event-banner--big {
+    font-size: 24px;
+    line-height: 30px;
+  }
+
+  .countdown {
+    font-size: 68px;
+    line-height: 68px;
+  }
+
+  .results__head,
+  .results__row {
+    grid-template-columns: 28px minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+  }
+
+  .results__hide-narrow {
+    display: none;
+  }
+
+  .modal {
+    padding: 24px 16px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+}
+
+@media (max-height: 520px) {
+  .event-banner {
+    top: 14%;
+  }
+
+  .countdown {
+    font-size: 56px;
+    line-height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

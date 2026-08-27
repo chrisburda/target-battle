@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#151515" />
+    <meta
+      name="description"
+      content="Target Battle - a hot-seat artillery game where your shot is only as good as the power interval you just held."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%272%27 fill=%27%23151515%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2711%27 fill=%27none%27 stroke=%27%23fac800%27 stroke-width=%273%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%274%27 fill=%27%23da291c%27/%3E%3C/svg%3E" />
+    <title>Target Battle</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="game-canvas" aria-label="Target Battle playfield"></canvas>
+
+      <div id="ui-root">
+        <!-- ------------------------------------------------ setup screen -->
+        <section id="setup-screen" class="screen screen--setup" aria-label="Match setup">
+          <div class="setup__inner">
+            <header class="setup__head">
+              <p class="eyebrow">Hot-seat artillery</p>
+              <h1 class="title">
+                <span class="title__target">TARGET</span><span class="title__battle">BATTLE</span>
+              </h1>
+              <p class="setup__pitch">
+                Pick who to hit, then hold the power number. How close you ride it
+                decides the shot.
+              </p>
+            </header>
+
+            <div class="setup__grid">
+              <section class="panel" aria-labelledby="fighters-heading">
+                <h2 class="panel__title" id="fighters-heading">Fighters</h2>
+                <div id="slot-list" class="slot-list"></div>
+                <div class="slot-actions">
+                  <button id="remove-slot" class="btn btn--secondary btn--small" type="button">
+                    Remove fighter
+                  </button>
+                  <button id="add-slot" class="btn btn--secondary btn--small" type="button">
+                    Add fighter
+                  </button>
+                </div>
+              </section>
+
+              <section class="panel" aria-labelledby="roster-heading">
+                <h2 class="panel__title" id="roster-heading">
+                  Choose <span id="roster-for" class="panel__title-accent">Player 1</span>
+                </h2>
+                <div class="roster-body">
+                  <div class="portrait">
+                    <canvas id="portrait-canvas" aria-hidden="true"></canvas>
+                    <div class="portrait__plate">
+                      <strong id="portrait-name">Pip</strong>
+                      <span id="portrait-species">Gecko</span>
+                    </div>
+                  </div>
+                  <div class="roster-pick">
+                    <div id="animal-grid" class="animal-grid"></div>
+                    <div id="animal-detail" class="animal-detail" aria-live="polite"></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="setup__cta">
+              <label class="switch">
+                <input id="wind-toggle" type="checkbox" checked />
+                <span class="switch__track"><span class="switch__thumb"></span></span>
+                <span class="switch__label">Wind</span>
+              </label>
+              <button id="start-match" class="btn btn--primary btn--large" type="button">
+                Start match
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- --------------------------------------------------------- hud -->
+        <section id="hud" class="hud" hidden>
+          <div id="roster-rail" class="roster-rail" aria-label="Fighters"></div>
+
+          <div class="hud__top-centre">
+            <div id="round-chip" class="round-chip"><span id="round-label">Round 1</span></div>
+            <div id="wind-gauge" class="wind-gauge"></div>
+          </div>
+
+          <div class="hud__top-right">
+            <button id="sound-button" class="icon-button" type="button" aria-label="Toggle sound"></button>
+            <button id="pause-button" class="icon-button" type="button" aria-label="Pause"></button>
+          </div>
+
+          <div id="event-banner" class="event-banner" aria-live="assertive"></div>
+
+          <!-- aim phase -->
+          <div id="aim-panel" class="dock dock--aim" hidden>
+            <div class="dock__head">
+              <span class="dock__label">Target</span>
+              <span id="line-readout" class="line-readout"></span>
+            </div>
+            <div id="target-strip" class="target-strip" role="radiogroup" aria-label="Choose a target"></div>
+            <div class="dock__row dock__row--ammo">
+              <span class="dock__label">Ammo</span>
+              <div id="ammo-strip" class="ammo-strip" role="listbox" aria-label="Ammunition"></div>
+            </div>
+            <p id="ammo-blurb" class="dock__blurb"></p>
+            <p class="dock__hint">
+              <kbd>&larr;</kbd><kbd>&rarr;</kbd> target &nbsp;&middot;&nbsp; <kbd>Enter</kbd> fire
+              &nbsp;&middot;&nbsp; then tap <kbd>Space</kbd>
+            </p>
+          </div>
+
+          <!-- interval phase -->
+          <div id="interval-panel" class="dock dock--interval" hidden>
+            <div class="meter__head">
+              <div class="stat stat--target">
+                <span class="stat__label">Target</span>
+                <span class="stat__value"
+                  ><span id="target-watts">220</span><span class="stat__unit">W</span></span
+                >
+              </div>
+              <div id="zone-flag" class="zone-flag">Find the zone</div>
+              <div class="stat stat--right">
+                <span class="stat__label">Left</span>
+                <span class="stat__value"
+                  ><span id="interval-clock">5.0</span><span class="stat__unit">s</span></span
+                >
+              </div>
+            </div>
+
+            <div class="meter">
+              <div class="meter__track">
+                <div id="meter-zone" class="meter__zone"></div>
+                <div id="meter-fill" class="meter__fill"></div>
+                <div id="meter-target" class="meter__target"></div>
+                <div id="meter-needle" class="meter__needle"><span id="meter-watts">0 W</span></div>
+              </div>
+              <div class="meter__scale" id="meter-scale"></div>
+            </div>
+
+            <div class="meter__foot">
+              <div class="stat stat--small">
+                <span class="stat__label">Accuracy</span>
+                <span class="stat__value"
+                  ><span id="live-accuracy">0</span><span class="stat__unit">%</span></span
+                >
+              </div>
+              <div class="meter__progress">
+                <div id="interval-progress" class="meter__progress-fill"></div>
+              </div>
+              <div class="stat stat--small stat--right">
+                <span class="stat__label">Cadence</span>
+                <span class="stat__value"
+                  ><span id="live-cadence">0.0</span><span class="stat__unit">/s</span></span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div id="countdown" class="countdown" hidden><span id="countdown-value">3</span></div>
+
+          <div id="floaters" class="floaters" aria-hidden="true"></div>
+
+          <div id="touch-controls" class="touch" hidden>
+            <button id="touch-prev" class="touch__btn" type="button" aria-label="Previous target">
+              &#9664;
+            </button>
+            <button id="touch-next" class="touch__btn" type="button" aria-label="Next target">
+              &#9654;
+            </button>
+            <button id="touch-action" class="touch__btn touch__btn--primary" type="button">
+              FIRE
+            </button>
+          </div>
+        </section>
+
+        <!-- ------------------------------------------------ pause screen -->
+        <section id="pause-screen" class="screen screen--modal" hidden aria-label="Paused">
+          <div class="modal">
+            <h2 class="modal__title">Paused</h2>
+            <div class="modal__actions">
+              <button id="resume-button" class="btn btn--primary" type="button">Resume</button>
+              <button id="restart-button" class="btn btn--secondary" type="button">
+                Restart match
+              </button>
+              <button id="quit-button" class="btn btn--secondary" type="button">
+                Back to setup
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---------------------------------------------- results screen -->
+        <section id="results-screen" class="screen screen--modal" hidden aria-label="Results">
+          <div class="modal modal--wide">
+            <p class="eyebrow" id="results-eyebrow">Match over</p>
+            <h2 class="modal__title" id="results-title">Match over</h2>
+            <div id="results-table" class="results"></div>
+            <div class="modal__actions">
+              <button id="rematch-button" class="btn btn--primary" type="button">Rematch</button>
+              <button id="results-setup-button" class="btn btn--secondary" type="button">
+                Change fighters
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
