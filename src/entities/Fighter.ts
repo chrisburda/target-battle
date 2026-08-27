@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MATCH, PHYSICS, WORLD } from '../game/config';
-import { createFighterModel, type FighterModel } from '../assets/modelFactories/AnimalFactory';
+import type { FighterModel } from '../assets/modelFactories/AnimalFactory';
+import { createFighter } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import type { Terrain } from '../systems/Terrain';
 import type { AnimalDef, ControllerKind, PlayerStats } from '../game/types';
@@ -88,7 +89,7 @@ export class Fighter {
     materials: MaterialLibrary,
     private readonly terrain: Terrain,
   ) {
-    this.model = createFighterModel(materials, animal);
+    this.model = createFighter(materials, animal);
     this.group = this.model.root;
     this.group.name = 'fighter-slot' + slot;
 
@@ -472,6 +473,10 @@ export class Fighter {
     } else {
       this.model.head.rotation.z += (0 - this.model.head.rotation.z) * Math.min(1, delta * 3);
     }
+
+    // Skinned models pose through proxies; this is where those land on the
+    // skeleton. Built fighters do not define it and pay nothing.
+    this.model.applyPose?.();
 
     this.updateFace(delta, elapsed);
 

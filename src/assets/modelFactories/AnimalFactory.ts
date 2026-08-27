@@ -107,7 +107,24 @@ export type FighterModel = {
   height: number;
   /** Standing height in the root's LOCAL units, for anything parented to it. */
   localHeight: number;
-  diagnostics: { meshes: number; triangles: number; occlusion: OcclusionReport };
+  /**
+   * Pushes the posed proxies onto whatever actually moves, once per frame.
+   *
+   * Built fighters have none: `Fighter` writes straight to the groups it is
+   * handed and they are the real thing. A skinned model cannot offer that — a
+   * bone lives in the skeleton hierarchy and cannot be reparented under a
+   * pivot — so its groups are detached stand-ins and this copies them across.
+   */
+  applyPose?: () => void;
+  diagnostics: {
+    meshes: number;
+    triangles: number;
+    occlusion: OcclusionReport;
+    /** Driven bones, zero for a built fighter. */
+    bones?: number;
+    /** Axes the swing chain rotates about, in the model's own space. */
+    swingAxis?: string;
+  };
 };
 
 // --------------------------------------------------------------- geometry
@@ -1349,6 +1366,19 @@ const PROPORTIONS: Record<string, Proportions> = {
   tortoise: { torsoRadius: 0.46, torsoHeight: 0.74, belly: 0.4, headRadius: 0.5, headHeight: 0.76, headY: 1.06, legLength: 0.32, armUpper: 0.26, armLower: 0.24, limbThickness: 0.13, footSize: 0.2, scale: 1.04 },
   toucan: { torsoRadius: 0.4, torsoHeight: 0.94, belly: 0.46, headRadius: 0.54, headHeight: 0.82, headY: 1.34, legLength: 0.46, armUpper: 0.26, armLower: 0.26, limbThickness: 0.095, footSize: 0.18, scale: 0.99 },
 };
+
+/**
+ * Standing height of a built fighter, in world units.
+ *
+ * Exported so the generated models can be normalised to the same height as
+ * the ones they replace: camera framing, hit distances and the HUD anchors are
+ * all tuned against these numbers, and a cast that swaps in half a unit taller
+ * would quietly change how the game plays as well as how it looks.
+ */
+export function proceduralFighterHeight(animalId: string): number {
+  const prop = PROPORTIONS[animalId] ?? PROPORTIONS.gecko;
+  return (prop.legLength + prop.torsoHeight + prop.headHeight * 0.9) * prop.scale * FIGHTER_SCALE;
+}
 
 // ------------------------------------------------------------------- bake
 

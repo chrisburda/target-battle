@@ -9,6 +9,11 @@ import { MaterialLibrary } from '../assets/MaterialLibrary';
 import { disposeProceduralTextures, proceduralTextureCount } from '../assets/ProceduralTextures';
 import { WorldPropKit, type PropKitOptions } from '../assets/modelFactories/WorldPropKit';
 import { disposeSharedAnimalGeometry, setModelQuality } from '../assets/modelFactories/AnimalFactory';
+import {
+  getFighterModelSource,
+  prepareFighterModels,
+  setFighterModelSource,
+} from '../assets/modelFactories/fighterModels';
 import { disposeSharedAmmoGeometry } from '../assets/modelFactories/AmmoFactory';
 import { Terrain } from '../systems/Terrain';
 import { Environment } from '../systems/Environment';
@@ -282,12 +287,32 @@ export class Game {
       this.audio.unlock();
       this.audio.uiClick();
     };
-    this.setupScreen.onStart = (players, wind) => {
+    this.setupScreen.onStart = (players, wind, generatedModels) => {
       this.audio.unlock();
       this.audio.uiConfirm();
       this.players = players;
       this.windEnabled = wind;
-      this.startMatch(true);
+      setFighterModelSource(generatedModels ? 'generated' : 'built');
+      /*
+       * The generated cast is a download, so the match cannot start on the
+       * click. Only the animals actually playing are fetched — pulling all six
+       * to play a two-hander would triple the wait for nothing — and the start
+       * button carries the progress so there is no separate spinner to build.
+       */
+      void prepareFighterModels(
+        players.map((player) => player.animalId),
+        (loaded, total) =>
+          this.setupScreen.setBusy(total > 0, 'Loading cast ' + loaded + '/' + total + '…'),
+      )
+        .catch((error) => {
+          // A failed fetch is not a reason to refuse to play: the dispatcher
+          // falls back to the built cast for anything that did not arrive.
+          console.warn('generated cast failed to load, falling back', error);
+        })
+        .finally(() => {
+          this.setupScreen.setBusy(false);
+          this.startMatch(true);
+        });
     };
 
     this.hud.onAmmoPicked = (ammoId) => this.selectAmmo(ammoId);
@@ -1550,6 +1575,67 @@ export class Game {
     if (!import.meta.env.DEV && !qaRequested) return;
 
     window.__THREE_GAME_TEST_HOOKS__ = {
+      /*
+       * Swap the cast and wait for it.
+       *
+       * The QA harness drives states through `setState`, which calls
+       * `startMatch` directly and never passes through the setup screen where
+       * the toggle lives. Without this there is no way to screenshot the
+       * generated cast at all, and the one thing worth comparing would be the
+       * one thing the harness could not reach.
+       */
+      useGeneratedCast: async () => {
+        setFighterModelSource('generated');
+        await prepareFighterModels(ANIMALS.map((animal) => animal.id));
+      },
+      /*
+       * What the live fighters actually came out as.
+       *
+       * Every way of getting a skinned adaptation wrong is silent: a bone name
+       * that does not resolve, a scale applied on two nodes instead of one, a
+       * bounding box measured before its matrices were current. None of them
+       * throw. They produce a fighter of the wrong size holding a rock in the
+       * wrong place, which is slow to diagnose from a screenshot and instant
+       * to diagnose from six numbers.
+       */
+      /**
+       * Starts a throw, for animation capture.
+       *
+       * Falls back to the first fighter: the closeup state frames a hero
+       * without necessarily leaving a turn active, so keying off the active
+       * fighter alone silently captured eight frames of a model standing
+       * still and looking like the rig had failed.
+       */
+      throwNow: () => {
+        const fighter = this.activeFighter ?? this.fighters[0] ?? null;
+        fighter?.startThrow();
+        return Boolean(fighter);
+      },
+      inspectCast: () => {
+        const box = new THREE.Box3();
+        const point = new THREE.Vector3();
+        const scale = new THREE.Vector3();
+        return this.fighters.map((fighter) => {
+          box.setFromObject(fighter.model.root);
+          fighter.model.hand.getWorldPosition(point);
+          fighter.model.hand.getWorldScale(scale);
+          return {
+            animal: fighter.animal.id,
+            source: getFighterModelSource(),
+            handParent: fighter.model.hand.parent?.name ?? '(none)',
+            bones: fighter.model.diagnostics.bones ?? 0,
+            swingAxis: fighter.model.diagnostics.swingAxis ?? '',
+            triangles: fighter.model.diagnostics.triangles,
+            declaredHeight: Number(fighter.model.height.toFixed(3)),
+            measuredHeight: Number((box.max.y - box.min.y).toFixed(3)),
+            handWorldScale: Number(scale.y.toFixed(4)),
+            handAboveFeet: Number((point.y - box.min.y).toFixed(3)),
+            // Horizontal distance from the fighter to its own hand. Height
+            // alone hides a swing that travels mostly forward and back.
+            handReach: Number((point.x - fighter.position.x).toFixed(3)),
+          };
+        });
+      },
       seed: (value: number) => {
         this.seed = value;
         this.rng = createSeededRandom(value);

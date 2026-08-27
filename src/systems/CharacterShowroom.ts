@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createFighterModel, type FighterModel } from '../assets/modelFactories/AnimalFactory';
+import type { FighterModel } from '../assets/modelFactories/AnimalFactory';
+import { createFighter } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import { getAnimal } from '../game/roster';
 
@@ -87,7 +88,7 @@ export class CharacterShowroom {
     this.animalId = animalId;
     this.disposeModel();
 
-    const model = createFighterModel(this.materials, getAnimal(animalId));
+    const model = createFighter(this.materials, getAnimal(animalId));
     // Portraits face the camera's left-of-centre, the classic character-select
     // three-quarter angle, rather than the profile the game uses.
     model.root.rotation.y = -0.62;

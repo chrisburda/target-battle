@@ -7,13 +7,19 @@ artifacts/
 
 # Generated 3D assets.
 #
-# assets/tripo holds the source of record and is committed: generation is not
-# deterministic, so a lost GLB cannot be re-made from its prompt.
+# assets/tripo holds the source of record and is committed: generation and
+# rigging are both non-deterministic, so a lost GLB cannot be re-made from its
+# prompt, and each one costs credits.
 #
-# public/tripo is the serving copy the dev comparison harness reads, and Vite
-# copies everything in public/ into the build. The game does not load these
-# yet, so committing it would put 26 MB of unused payload in front of every
-# visitor. Recreate it with: cp assets/tripo/*.glb public/tripo/
+# public/tripo is the serving copy. The rigged fighters are committed and the
+# rest is not: Vite copies public/ into the build without bundling it, so a
+# rigged model costs a visitor nothing until the HD cast toggle actually asks
+# for one — but without them in the repo that toggle does nothing on the
+# deployed site. The unrigged fighters and the ammo props are dev-harness
+# inputs only and would be dead weight in a deploy.
+#
+# Rebuild the serving copies with: node scripts/glb-optimise.mjs --all
 assets/tripo/*.task.json
 assets/tripo/*.rejected
-public/tripo/
+public/tripo/*
+!public/tripo/*-rigged.glb

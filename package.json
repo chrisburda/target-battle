@@ -14,7 +14,10 @@
     "playtest:bot": "node scripts/bot-playtest.mjs",
     "verify:all": "npm run build && npm run test && npm run playtest:bot && npm run capture:states",
     "capture:characters": "node scripts/character-sheet.mjs",
-    "gen:character": "node scripts/tripo-character.mjs"
+    "gen:character": "node scripts/tripo-character.mjs",
+    "rig:cast": "node scripts/rig-cast.mjs",
+    "optimise:glb": "node scripts/glb-optimise.mjs --all",
+    "verify:hd": "node scripts/verify-hd-path.mjs"
   },
   "dependencies": {
     "three": "^0.184.0"

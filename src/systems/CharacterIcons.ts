@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createFighterModel } from '../assets/modelFactories/AnimalFactory';
+import { createFighter } from '../assets/modelFactories/fighterModels';
 import type { MaterialLibrary } from '../assets/MaterialLibrary';
 import { ANIMALS, getAnimal } from '../game/roster';
 import { setCreaturePortrait } from '../ui/icons';
@@ -59,7 +59,7 @@ export class CharacterIcons {
   }
 
   private render(animalId: string): string | null {
-    const model = createFighterModel(this.materials, getAnimal(animalId));
+    const model = createFighter(this.materials, getAnimal(animalId));
     // Three-quarter view, turned toward the viewer's left, which is the angle
     // the setup portrait uses too.
     model.root.rotation.y = -0.75;

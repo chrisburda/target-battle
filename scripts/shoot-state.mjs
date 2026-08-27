@@ -40,6 +40,11 @@ await page.evaluate((s) => {
   window.__THREE_GAME_TEST_HOOKS__?.seed(s);
   window.__THREE_GAME_TEST_HOOKS__?.setReducedMotion(true);
 }, seed);
+// --hd swaps in the generated cast first; it is a download, so the state
+// change has to wait for it or it builds the fighters it already had.
+if (process.argv.includes('--hd')) {
+  await page.evaluate(() => window.__THREE_GAME_TEST_HOOKS__?.useGeneratedCast?.());
+}
 await page.evaluate((s) => window.__THREE_GAME_TEST_HOOKS__?.setState(s), state);
 await page.waitForTimeout(1100);
 

@@ -66,6 +66,12 @@ interface ThreeGameDiagnostics {
 }
 
 interface ThreeGameTestHooks {
+  /** Swaps to the generated cast and resolves once it has downloaded. */
+  useGeneratedCast?: () => Promise<void>;
+  /** Starts a throw on the active fighter, for animation capture. */
+  throwNow?: () => boolean;
+  /** Per-fighter build facts, for diagnosing a silent adaptation failure. */
+  inspectCast?: () => Array<Record<string, string | number>>;
   /** Re-seed the game RNG; all gameplay randomness flows through it. */
   seed(value: number): void;
   /**

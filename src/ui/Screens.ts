@@ -38,13 +38,16 @@ export class SetupScreen {
   private readonly removeButton = must<HTMLButtonElement>('#remove-slot');
   private readonly startButton = must<HTMLButtonElement>('#start-match');
   private readonly windToggle = must<HTMLInputElement>('#wind-toggle');
+  private readonly modelsToggle = must<HTMLInputElement>('#models-toggle');
   private readonly portraitName = must('#portrait-name');
   private readonly portraitSpecies = must('#portrait-species');
 
   private players: PlayerConfig[] = [];
   private selectedSlot = 0;
 
-  onStart: ((players: PlayerConfig[], wind: boolean) => void) | null = null;
+  onStart:
+    | ((players: PlayerConfig[], wind: boolean, generatedModels: boolean) => void)
+    | null = null;
   onInteract: (() => void) | null = null;
   /** Fired whenever the previewed fighter changes. */
   onPreview: ((animalId: string) => void) | null = null;
@@ -74,14 +77,25 @@ export class SetupScreen {
     });
 
     this.startButton.addEventListener('click', () => {
-      this.onStart?.(this.players.map((player) => ({ ...player })), this.windToggle.checked);
+      this.onStart?.(
+        this.players.map((player) => ({ ...player })),
+        this.windToggle.checked,
+        this.modelsToggle.checked,
+      );
     });
 
     this.windToggle.addEventListener('change', () => this.onInteract?.());
+    this.modelsToggle.addEventListener('change', () => this.onInteract?.());
   }
 
   setVisible(visible: boolean): void {
     this.root.hidden = !visible;
+  }
+
+  /** Start button doubles as the progress readout while a cast downloads. */
+  setBusy(busy: boolean, label?: string): void {
+    this.startButton.disabled = busy;
+    this.startButton.textContent = busy ? (label ?? 'Loading…') : 'Start match';
   }
 
   get isVisible(): boolean {
