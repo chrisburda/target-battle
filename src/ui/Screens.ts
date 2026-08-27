@@ -38,24 +38,13 @@ export class SetupScreen {
   private readonly removeButton = must<HTMLButtonElement>('#remove-slot');
   private readonly startButton = must<HTMLButtonElement>('#start-match');
   private readonly windToggle = must<HTMLInputElement>('#wind-toggle');
-  private readonly modelsToggle = must<HTMLInputElement>('#models-toggle');
   private readonly portraitName = must('#portrait-name');
   private readonly portraitSpecies = must('#portrait-species');
 
   private players: PlayerConfig[] = [];
   private selectedSlot = 0;
 
-  onStart:
-    | ((players: PlayerConfig[], wind: boolean, generatedModels: boolean) => void)
-    | null = null;
-  /**
-   * Fired when the cast switch moves, before any match starts.
-   *
-   * The portrait and the roster avatars are the whole point of the screen, so
-   * the switch has to change what they show rather than only what the next
-   * match builds — otherwise it is a promise the screen never keeps.
-   */
-  onModelSourceChanged: ((generatedModels: boolean) => void) | null = null;
+  onStart: ((players: PlayerConfig[], wind: boolean) => void) | null = null;
   onInteract: (() => void) | null = null;
   /** Fired whenever the previewed fighter changes. */
   onPreview: ((animalId: string) => void) | null = null;
@@ -85,33 +74,34 @@ export class SetupScreen {
     });
 
     this.startButton.addEventListener('click', () => {
-      this.onStart?.(
-        this.players.map((player) => ({ ...player })),
-        this.windToggle.checked,
-        this.modelsToggle.checked,
-      );
+      this.onStart?.(this.players.map((player) => ({ ...player })), this.windToggle.checked);
     });
 
     this.windToggle.addEventListener('change', () => this.onInteract?.());
-    this.modelsToggle.addEventListener('change', () => {
-      this.onInteract?.();
-      this.onModelSourceChanged?.(this.modelsToggle.checked);
-    });
   }
 
   setVisible(visible: boolean): void {
     this.root.hidden = !visible;
   }
 
-  /** Start button doubles as the progress readout while a cast downloads. */
+  /** Start button doubles as the progress readout while the cast downloads. */
   setBusy(busy: boolean, label?: string): void {
     this.startButton.disabled = busy;
-    this.modelsToggle.disabled = busy;
     this.startButton.textContent = busy ? (label ?? 'Loading…') : 'Start match';
   }
 
-  get generatedModels(): boolean {
-    return this.modelsToggle.checked;
+  /**
+   * Repaints the roster after the baked avatars change underneath it.
+   *
+   * `CharacterIcons.renderAll` refreshes the portrait store, but the store is
+   * only read while building markup — every avatar already on screen is an
+   * `<img>` holding the data URL it was given when the row was written. Without
+   * this the switch changes the live portrait and leaves all eight baked
+   * avatars showing the other cast, which is a worse result than not switching
+   * them at all.
+   */
+  refreshAvatars(): void {
+    this.render();
   }
 
   get isVisible(): boolean {

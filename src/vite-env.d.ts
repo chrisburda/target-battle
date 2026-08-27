@@ -70,6 +70,8 @@ interface ThreeGameTestHooks {
   useGeneratedCast?: () => Promise<void>;
   /** Starts a throw on the active fighter, for animation capture. */
   throwNow?: () => boolean;
+  /** Name of the model in the active hand, to prove which factory built it. */
+  heldRoundName?: () => string | null;
   /** Picks a round by id, so a capture can show one that is not the default. */
   pickAmmo?: (ammoId: string) => void;
   /** Per-fighter build facts, for diagnosing a silent adaptation failure. */

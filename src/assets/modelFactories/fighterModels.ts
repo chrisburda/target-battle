@@ -20,18 +20,19 @@ import { generatedPropIds, preloadGeneratedProps } from './GeneratedPropFactory'
 /**
  * Which cast the game builds its fighters from.
  *
- * Two complete sets exist and neither is strictly better. The built ones are
- * code — no download, a face that blinks and emotes, and geometry that can be
- * tuned in a single edit. The generated ones look considerably better and move
- * on a real skeleton, at the cost of a few megabytes and any expression at all.
+ * The generated set is the game's cast now. It was a switch while the two were
+ * being compared and the comparison is settled: it looks considerably better,
+ * moves on a real skeleton, and costs fewer draw calls. What it gives up is
+ * blinking and brow moods, which no morph targets exist for.
  *
- * Rather than pick one, this is a switch the setup screen exposes, so the two
- * can be compared in the same match on the same terrain — which is the only
- * comparison that settles anything.
+ * The built set has not been deleted, because it is still what the game falls
+ * back to. Nothing downloads instantly, and a few megabytes over a bad
+ * connection — or a 404 on one asset — should cost a player some fidelity, not
+ * a game. Every consumer checks per asset, so a mixed frame is a valid state.
  */
 export type FighterModelSource = 'built' | 'generated';
 
-let source: FighterModelSource = 'built';
+let source: FighterModelSource = 'generated';
 
 export function setFighterModelSource(next: FighterModelSource): void {
   source = next;
@@ -90,7 +91,7 @@ export async function prepareGeneratedAssets(
  */
 export function createAmmo(materials: MaterialLibrary, ammo: AmmoDef): AmmoModel {
   if (source === 'generated' && hasGeneratedAmmo(ammo.id)) {
-    return createGeneratedAmmoModel(ammo);
+    return createGeneratedAmmoModel(materials, ammo);
   }
   return createAmmoModel(materials, ammo);
 }

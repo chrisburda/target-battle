@@ -200,6 +200,7 @@ export function createGeneratedFighterModel(
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
+    mesh.customDepthMaterial = materials.opaqueDepth;
   });
 
   // --- normalise ------------------------------------------------------------
@@ -352,6 +353,8 @@ export function createGeneratedFighterModel(
     facing,
     body,
     head: headProxy,
+    // The bone, not the proxy: the proxy never moves off the origin.
+    headAnchor: bones.get(BONES.head) ?? fit,
     throwArm: armProxy,
     hand: grip,
     // No morph targets and no eyelid geometry: this cast does not blink.

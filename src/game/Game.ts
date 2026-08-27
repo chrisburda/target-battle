@@ -12,7 +12,6 @@ import { disposeSharedAnimalGeometry, setModelQuality } from '../assets/modelFac
 import {
   getFighterModelSource,
   prepareGeneratedAssets,
-  setFighterModelSource,
 } from '../assets/modelFactories/fighterModels';
 import { disposeSharedAmmoGeometry } from '../assets/modelFactories/AmmoFactory';
 import { Terrain } from '../systems/Terrain';
@@ -167,6 +166,7 @@ export class Game {
     // shows a placeholder that disagrees with the model.
     this.characterIcons = new CharacterIcons(this.showroom.rendererForIcons, this.materials);
     this.characterIcons.renderAll();
+    this.loadGeneratedAssets();
 
     this.buildWorld();
     this.wireUi();
@@ -229,6 +229,27 @@ export class Game {
       : { density: 1, castShadows: true };
   }
 
+  /**
+   * Fetches the generated assets in the background, at startup.
+   *
+   * The screen is not held for them. It draws immediately with the built cast
+   * — which is what that cast is for now — and swaps to the generated one the
+   * moment it lands, portrait and avatars together. Blocking the first paint on
+   * six megabytes to avoid a swap the player will rarely see would be a poor
+   * trade, and a failed fetch then costs nothing but fidelity.
+   */
+  private loadGeneratedAssets(): void {
+    void prepareGeneratedAssets(ANIMALS.map((animal) => animal.id))
+      .catch((error) => console.warn('generated assets failed to load, falling back', error))
+      .finally(() => {
+        this.showroom.refresh();
+        this.characterIcons.renderAll();
+        // The roster rows hold the data URLs they were built with and do not
+        // re-read the portrait store on their own.
+        this.setupScreen.refreshAvatars();
+      });
+  }
+
   private buildWorld(): void {
     this.terrain = new Terrain(this.materials, { seed: this.seed, hills: 4 });
     this.worldRoot.add(this.terrain.group);
@@ -287,56 +308,25 @@ export class Game {
       this.audio.unlock();
       this.audio.uiClick();
     };
-    /*
-     * Flipping the switch reloads the screen's own cast, not just the match's.
-     *
-     * All six are fetched here rather than only the ones in the line-up,
-     * because the roster avatars show every animal and the portrait follows
-     * whatever is hovered — a partial load would leave the screen showing a
-     * mix of the two casts, which is worse than showing either.
-     */
-    this.setupScreen.onModelSourceChanged = (generatedModels) => {
-      setFighterModelSource(generatedModels ? 'generated' : 'built');
-      const finish = () => {
-        this.setupScreen.setBusy(false);
-        this.showroom.refresh();
-        // renderAll republishes the baked portraits, and the roster rows read
-        // them on their next paint.
-        this.characterIcons.renderAll();
-      };
-      if (!generatedModels) {
-        finish();
-        return;
-      }
-      void prepareGeneratedAssets(
-        ANIMALS.map((animal) => animal.id),
-        (loaded, total) =>
-          this.setupScreen.setBusy(loaded < total, 'Loading cast ' + loaded + '/' + total + '…'),
-      )
-        .catch((error) => console.warn('generated cast failed to load, falling back', error))
-        .finally(finish);
-    };
-
-    this.setupScreen.onStart = (players, wind, generatedModels) => {
+    this.setupScreen.onStart = (players, wind) => {
       this.audio.unlock();
       this.audio.uiConfirm();
       this.players = players;
       this.windEnabled = wind;
-      setFighterModelSource(generatedModels ? 'generated' : 'built');
       /*
-       * Usually a no-op by now: flipping the switch already fetched the set.
-       * It stays because the switch can also be left alone — a player who
-       * starts with it already on from a previous match reaches here first.
+       * Normally a no-op: the fetch starts at boot and is long finished by the
+       * time anyone has picked a line-up. It stays for the case where it is
+       * not — a slow connection, or a player who is quicker than the download.
        */
       void prepareGeneratedAssets(
         players.map((player) => player.animalId),
         (loaded, total) =>
-          this.setupScreen.setBusy(total > 0, 'Loading cast ' + loaded + '/' + total + '…'),
+          this.setupScreen.setBusy(loaded < total, 'Loading ' + loaded + '/' + total + '…'),
       )
         .catch((error) => {
-          // A failed fetch is not a reason to refuse to play: the dispatcher
-          // falls back to the built cast for anything that did not arrive.
-          console.warn('generated cast failed to load, falling back', error);
+          // A failed fetch is not a reason to refuse to play: every consumer
+          // falls back to the built asset for anything that did not arrive.
+          console.warn('generated assets failed to load, falling back', error);
         })
         .finally(() => {
           this.setupScreen.setBusy(false);
@@ -407,6 +397,9 @@ export class Game {
     // Drop every held round before the projectile system is torn down, so no
     // fighter is left pointing at geometry that is about to be disposed.
     for (const fighter of this.fighters) fighter.setHeldAmmo(null);
+    // Nothing is in flight between matches, so this is the moment the round
+    // cache can safely be rebuilt against whatever source is now selected.
+    this.projectiles.resetModels();
 
     if (newTerrain) {
       this.seed = Math.floor(this.rng() * 1_000_000) + 1;
@@ -1605,16 +1598,14 @@ export class Game {
 
     window.__THREE_GAME_TEST_HOOKS__ = {
       /*
-       * Swap the cast and wait for it.
+       * Wait for the generated assets to be in hand.
        *
-       * The QA harness drives states through `setState`, which calls
-       * `startMatch` directly and never passes through the setup screen where
-       * the toggle lives. Without this there is no way to screenshot the
-       * generated cast at all, and the one thing worth comparing would be the
-       * one thing the harness could not reach.
+       * The harness drives states through `setState`, which calls
+       * `startMatch` directly rather than passing through the setup screen —
+       * so it can reach a match before the boot fetch has finished and capture
+       * the fallback cast without meaning to. This gives it something to await.
        */
       useGeneratedCast: async () => {
-        setFighterModelSource('generated');
         await prepareGeneratedAssets(ANIMALS.map((animal) => animal.id));
       },
       /*
@@ -1635,6 +1626,8 @@ export class Game {
        * fighter alone silently captured eight frames of a model standing
        * still and looking like the rig had failed.
        */
+      /** Name of the model currently in the active hand, to prove which factory built it. */
+      heldRoundName: () => this.activeFighter?.heldAmmoName ?? null,
       /** Picks a round, so a capture can show one that is not the default. */
       pickAmmo: (ammoId: string) => this.selectAmmo(ammoId),
       throwNow: () => {

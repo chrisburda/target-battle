@@ -3,6 +3,8 @@ import { defineConfig } from 'vite';
 /*
  * Served from a GitHub Pages project subpath
  * (chrisburda.github.io/target-battle/), so built asset URLs need that prefix.
+ * The path follows the repository name, not the game's title — the link has
+ * already been shared, and renaming the repo would break every copy of it.
  * Only the CI build sets it: locally the dev server and preview stay at the
  * root, and a stray base would break both.
  */

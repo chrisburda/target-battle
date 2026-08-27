@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { AmmoDef } from '../../game/types';
 import type { AmmoModel } from './AmmoFactory';
+import type { MaterialLibrary } from '../MaterialLibrary';
 
 /**
  * Ammunition built from the Tripo-generated props.
@@ -82,7 +83,10 @@ export async function preloadGeneratedAmmo(
  * unlike the fighters, a round never needs its own material, because nothing
  * flashes it.
  */
-export function createGeneratedAmmoModel(def: AmmoDef): AmmoModel {
+export function createGeneratedAmmoModel(
+  materials: MaterialLibrary,
+  def: AmmoDef,
+): AmmoModel {
   const source = cache.get(def.id);
   if (!source) throw new Error('generated ammo for "' + def.id + '" was not preloaded');
 
@@ -113,6 +117,7 @@ export function createGeneratedAmmoModel(def: AmmoDef): AmmoModel {
     if (!mesh.isMesh) return;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.customDepthMaterial = materials.opaqueDepth;
     const material = mesh.material as THREE.MeshStandardMaterial;
     if (!Array.isArray(material)) material.envMapIntensity = 0.6;
   });

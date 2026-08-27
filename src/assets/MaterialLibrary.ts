@@ -30,6 +30,18 @@ export class MaterialLibrary {
   readonly rock: THREE.MeshStandardMaterial;
   /** Dark matte used under fighters and props to ground them. */
   readonly groundContact: THREE.MeshBasicMaterial;
+  /**
+   * Depth material for opaque shadow casters that carry textures.
+   *
+   * three derives a depth variant from the surface material and copies its
+   * `map` across whether the depth pass needs it or not. That map-carrying
+   * variant fails to link on ANGLE/D3D11 — the terrain hit it first, and the
+   * generated assets hit it again the moment they arrived, since every one of
+   * them ships a colour, roughness and normal map. None of them are cut out,
+   * so the depth pass has no use for any of it; supplying a plain material
+   * both avoids the failure and saves three texture fetches per shadow texel.
+   */
+  readonly opaqueDepth: THREE.MeshDepthMaterial;
   /* ---- character roles ------------------------------------------------ */
   /** Eye white. Slightly warm, never pure white, so it sits in the lighting. */
   readonly sclera: THREE.MeshStandardMaterial;
@@ -137,6 +149,10 @@ export class MaterialLibrary {
         opacity: 0.42,
         depthWrite: false,
       }),
+    );
+
+    this.opaqueDepth = this.own(
+      new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }),
     );
 
     this.sclera = this.own(

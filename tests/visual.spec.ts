@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
 /**
- * Browser QA for Target Battle.
+ * Browser QA for Wild Watts.
  *
  * These are interaction tests, not screenshot baselines: the point is to prove
  * a player can actually complete a turn — aim, hold the interval, land a shot,

@@ -91,6 +91,17 @@ export type FighterModel = {
   /** Bob/squash anchor. Scaling this leaves the feet planted. */
   body: THREE.Group;
   head: THREE.Group;
+  /**
+   * Where the head actually is, for anything that needs to look at it.
+   *
+   * Separate from `head` because on a skinned model the two are different
+   * objects: `head` is a detached proxy that exists to be rotated, and it sits
+   * at the origin forever. Framing a portrait on it pointed the avatar camera
+   * at the fighter's feet — every generated avatar came out as a shot of a
+   * torso. Posing and measuring are not the same job here, so they get
+   * separate handles.
+   */
+  headAnchor: THREE.Object3D;
   /** Throwing arm; rotated on the Z axis during the wind-up. */
   throwArm: THREE.Group;
   /** World anchor the projectile spawns from. */
@@ -1599,6 +1610,8 @@ export function createFighterModel(materials: MaterialLibrary, def: AnimalDef): 
     facing,
     body,
     head,
+    // The built fighter's head is a real node, so it is both.
+    headAnchor: head,
     throwArm,
     hand: throwArmParts.grip,
     lids: eyes.map((eye) => eye.lid),

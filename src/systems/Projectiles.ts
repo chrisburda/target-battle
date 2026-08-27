@@ -197,6 +197,24 @@ export class ProjectileSystem {
   }
 
   /**
+   * Drops the cached round models so a change of model source is picked up.
+   *
+   * The cache lives as long as the system does, and the system is built once at
+   * startup rather than per match — so without this, the first round built in a
+   * session decides what every later one looks like. Switching to the generated
+   * assets left every round still showing the hand-built model, which is the
+   * one thing the switch was supposed to change.
+   *
+   * Only safe between matches: clones share geometry with the cached root, so
+   * anything still in flight would lose its buffers.
+   */
+  resetModels(): void {
+    for (const geometry of this.ownedGeometries) geometry.dispose();
+    this.ownedGeometries.length = 0;
+    this.modelCache.clear();
+  }
+
+  /**
    * A non-simulated copy of an ammo model, for showing the round in a
    * fighter's hand. Shares the cached geometry, so it costs one draw call.
    */

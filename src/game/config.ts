@@ -1,5 +1,5 @@
 /**
- * Central tuning table for Target Battle.
+ * Central tuning table for Wild Watts.
  *
  * Every number a designer would want to touch lives here. The interval model
  * (POWER) is the piece that an indoor trainer replaces later: the spacebar

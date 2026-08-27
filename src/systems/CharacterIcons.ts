@@ -76,7 +76,7 @@ export class CharacterIcons {
      * one matrix update and cannot drift.
      */
     model.root.updateMatrixWorld(true);
-    const headY = model.head.getWorldPosition(CharacterIcons.SCRATCH).y;
+    const headY = model.headAnchor.getWorldPosition(CharacterIcons.SCRATCH).y;
     this.camera.position.set(0.62, headY + 0.22, 4.6);
     this.camera.lookAt(0, headY - 0.16, 0);
     this.camera.updateProjectionMatrix();

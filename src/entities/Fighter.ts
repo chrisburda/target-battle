@@ -268,6 +268,11 @@ export class Fighter {
     this.heldAmmo = model;
   }
 
+  /** Name of the held round model, which carries the factory that built it. */
+  get heldAmmoName(): string | null {
+    return this.heldAmmo?.name ?? null;
+  }
+
   get isActive(): boolean {
     return this.active;
   }

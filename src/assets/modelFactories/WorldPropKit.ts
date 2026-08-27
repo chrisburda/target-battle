@@ -779,6 +779,9 @@ export class WorldPropKit {
       mesh.name = 'prop-' + key;
       mesh.castShadow = this.options.castShadows;
       mesh.receiveShadow = true;
+      // Every prop is opaque, generated or not, so none of them need the
+      // textured depth variant three would otherwise derive.
+      mesh.customDepthMaterial = this.materials.opaqueDepth;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       placements.forEach((placement, index) => {
         euler.set(0, placement.rotation, 0);

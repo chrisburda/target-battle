@@ -17,7 +17,8 @@
     "gen:character": "node scripts/tripo-character.mjs",
     "rig:cast": "node scripts/rig-cast.mjs",
     "optimise:glb": "node scripts/glb-optimise.mjs --all",
-    "verify:hd": "node scripts/verify-hd-path.mjs"
+    "verify:assets": "node scripts/verify-assets.mjs",
+    "gen:props": "node scripts/gen-props.mjs"
   },
   "dependencies": {
     "three": "^0.184.0"
