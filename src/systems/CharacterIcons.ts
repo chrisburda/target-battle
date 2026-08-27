@@ -21,6 +21,8 @@ export class CharacterIcons {
   private static readonly SIZE = 192;
 
   private readonly scene = new THREE.Scene();
+  private static readonly SCRATCH = new THREE.Vector3();
+
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 0.05, 40);
   private readonly target: THREE.WebGLRenderTarget;
   private readonly pixels: Uint8Array;
@@ -63,11 +65,20 @@ export class CharacterIcons {
     model.root.rotation.y = -0.75;
     this.scene.add(model.root);
 
-    // Head and shoulders with margin. Framed tight to the skull the avatars
-    // became a single giant eye with the crown cropped off.
-    const headY = model.height * 0.78;
-    this.camera.position.set(0.62, headY + 0.12, 4.9);
-    this.camera.lookAt(0, headY - 0.3, 0);
+    /*
+     * Framed off the head's own position, not a fraction of total height.
+     *
+     * 0.78 of the standing height is a fair guess for most of this cast and it
+     * is only ever a guess — it encodes one particular head-to-body ratio. The
+     * frog has a squat body under a large skull, and the moment its
+     * proportions moved, its avatar framed the chest with the face out of
+     * shot. The head is a named node on the model; asking it where it is costs
+     * one matrix update and cannot drift.
+     */
+    model.root.updateMatrixWorld(true);
+    const headY = model.head.getWorldPosition(CharacterIcons.SCRATCH).y;
+    this.camera.position.set(0.62, headY + 0.22, 4.6);
+    this.camera.lookAt(0, headY - 0.16, 0);
     this.camera.updateProjectionMatrix();
 
     const previousTarget = this.renderer.getRenderTarget();
