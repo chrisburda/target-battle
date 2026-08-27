@@ -1,8 +1,8 @@
 # Wild Watts
 
-**[Play it in your browser](https://chrisburda.github.io/target-battle/)** — no install, works on desktop and mobile.
+**[Play it in your browser](https://chrisburda.github.io/wild-watts/)** — no install, works on desktop and mobile.
 
-(The repository keeps its original name so the link above keeps working.)
+
 
 A hot-seat artillery game for 1–4 players. You pick **who to hit**; the **power
 interval** decides whether you actually hit them.
